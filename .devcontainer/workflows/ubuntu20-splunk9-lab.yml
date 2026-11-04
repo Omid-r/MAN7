@@ -1,0 +1,65 @@
+name: Ubuntu 20.04 + Splunk 9.2.1 Lab & Auto-Build
+
+on:
+  push:
+    branches: [ main, master ]
+  workflow_dispatch:
+    inputs:
+      clean_previous:
+        description: 'Clean all previous artifacts and reset Ubuntu 20.04 + Splunk 9.2.1 Lab'
+        required: false
+        default: 'true'
+
+jobs:
+  ubuntu20-splunk9-lab:
+    name: Ubuntu 20.04 LTS (Focal) + Splunk 9.2.1 End-to-End Lab
+    runs-on: ubuntu-latest
+    container:
+      image: ubuntu:20.04
+      options: --hostname ubuntu20-splunk9-lab
+
+    steps:
+      - name: 1. Install Base Tools on Ubuntu 20.04 LTS (Focal Fossa)
+        run: |
+          export DEBIAN_FRONTEND=noninteractive
+          apt-get update -y
+          apt-get install -y ca-certificates curl gnupg git tar rsync openssl lsof procps python3 build-essential
+          cat /etc/os-release
+
+      - name: 2. Install Node.js 20 Runtime in Ubuntu 20.04 Container
+        run: |
+          curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
+          apt-get install -y nodejs
+          node -v
+          npm -v
+
+      - name: 3. Checkout MAN7 Repository
+        uses: actions/checkout@v4
+
+      - name: 4. Clean Previous Lab State & Provision Splunk Enterprise 9.2.1
+        run: |
+          chmod +x .devcontainer/setup-ubuntu20-splunk9.sh
+          ./.devcontainer/setup-ubuntu20-splunk9.sh
+
+      - name: 5. Run MAN7 Unit Tests & Build Windows/Linux Portable Packages
+        run: |
+          npx --yes tsx --test src/utils/splunkEngine.test.ts
+          npm run build
+          ls -lh MAN7-Standalone.html windows-portable/
+
+      - name: 6. Start MAN7 Server + Ubuntu 20.04 Splunk 9 Lab & Run Full End-to-End Test
+        run: |
+          nohup node windows-portable/man7-server.cjs > /var/log/man7-lab.log 2>&1 &
+          sleep 3
+          curl -fsS http://127.0.0.1:3000/api/lab/status | python3 -m json.tool
+          curl -fsS -X POST http://127.0.0.1:3000/api/lab/run-e2e | python3 -m json.tool > /var/tmp/man7-e2e-lab-report.json
+          cat /var/tmp/man7-e2e-lab-report.json
+
+      - name: 7. Upload Windows Portable & Ubuntu 20.04 + Splunk 9 Lab Report Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: MAN7-Windows-Portable-And-Ubuntu20-Splunk9-Lab-Report
+          path: |
+            MAN7-Standalone.html
+            windows-portable/
+            /var/tmp/man7-e2e-lab-report.json

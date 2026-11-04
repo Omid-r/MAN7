@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="fa" dir="rtl" class="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <script>
+      (function () {
+        var NativeWebSocket = window.WebSocket;
+        if (!NativeWebSocket) return;
+        function MockViteSocket(url, protocols) {
+          this.url = String(url || '');
+          this.protocol = Array.isArray(protocols) ? (protocols[0] || '') : (protocols || '');
+          this.readyState = 1; // OPEN
+          this.bufferedAmount = 0;
+          this.extensions = '';
+          this.binaryType = 'blob';
+          this.onopen = null;
+          this.onerror = null;
+          this.onclose = null;
+          this.onmessage = null;
+        }
+        MockViteSocket.prototype.send = function () {};
+        MockViteSocket.prototype.close = function () { this.readyState = 3; };
+        MockViteSocket.prototype.addEventListener = function () {};
+        MockViteSocket.prototype.removeEventListener = function () {};
+        MockViteSocket.prototype.dispatchEvent = function () { return true; };
+        var WrappedWebSocket = function (url, protocols) {
+          var protoStr = Array.isArray(protocols) ? protocols.join(',') : String(protocols || '');
+          var urlStr = String(url || '');
+          if (protoStr.indexOf('vite-') !== -1 || urlStr.indexOf('token=') !== -1 || urlStr.indexOf('__vite') !== -1) {
+            return new MockViteSocket(url, protocols);
+          }
+          return protocols !== undefined ? new NativeWebSocket(url, protocols) : new NativeWebSocket(url);
+        };
+        WrappedWebSocket.prototype = NativeWebSocket.prototype;
+        WrappedWebSocket.CONNECTING = 0;
+        WrappedWebSocket.OPEN = 1;
+        WrappedWebSocket.CLOSING = 2;
+        WrappedWebSocket.CLOSED = 3;
+        window.WebSocket = WrappedWebSocket;
+      })();
+    </script>
+    <title>MAN7 | پلتفرم مهاجرت، ایمن‌سازی و ارتقاء آفلاین Splunk و RHEL</title>
+    <meta name="description" content="پلتفرم جامع مهندسی مهاجرت، ارتقاء خودکار نسخه به نسخه Splunk و ایمن‌سازی RHEL در محیط ایزوله (Air-Gapped)." />
+    <meta property="og:title" content="MAN7 | پلتفرم مهاجرت، ایمن‌سازی و ارتقاء آفلاین Splunk و RHEL" />
+    <meta property="og:description" content="پلتفرم جامع مهندسی مهاجرت، ارتقاء خودکار نسخه به نسخه Splunk و ایمن‌سازی RHEL در محیط ایزوله (Air-Gapped)." />
+    <meta property="og:type" content="website" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Vazirmatn:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  </head>
+  <body class="bg-slate-950 text-slate-100 antialiased selection:bg-emerald-500/30 selection:text-emerald-200">
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
+

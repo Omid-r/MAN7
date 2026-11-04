@@ -1,0 +1,17 @@
+node_modules/
+coverage/
+.DS_Store
+*.log
+.env*
+!.env.example
+.playwright-cli/
+.aistudio/
+.github-sync.json
+offline-depot/splunk_bins/*
+offline-depot/rpms/*
+offline-depot/configs/*
+offline-depot/scripts/*
+offline-depot/logs/*
+!offline-depot/**/.gitkeep
+
+

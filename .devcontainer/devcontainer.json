@@ -1,0 +1,31 @@
+{
+  "name": "MAN7 Lab - Ubuntu 20.04 LTS (Focal) + Splunk Enterprise 9.2.1",
+  "image": "mcr.microsoft.com/devcontainers/base:ubuntu-20.04",
+  "features": {
+    "ghcr.io/devcontainers/features/node:1": {
+      "version": "20"
+    }
+  },
+  "forwardPorts": [3000, 8000, 8089, 9997, 9099],
+  "portsAttributes": {
+    "3000": {
+      "label": "MAN7 Web UI & Control Center",
+      "onAutoForward": "openBrowser"
+    },
+    "8000": {
+      "label": "Splunk 9.2.1 Web UI"
+    },
+    "8089": {
+      "label": "Splunkd REST Management API"
+    },
+    "9997": {
+      "label": "Splunk Forwarder S2S Receiver"
+    },
+    "9099": {
+      "label": "MAN7 Root TCP Shell Bridge"
+    }
+  },
+  "postCreateCommand": "bash .devcontainer/setup-ubuntu20-splunk9.sh",
+  "postStartCommand": "nohup npm start > /var/log/man7-web.log 2>&1 &",
+  "remoteUser": "root"
+}

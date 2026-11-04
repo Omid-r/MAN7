@@ -1,0 +1,6 @@
+{
+  "name": "MAN7",
+  "description": "پلتفرم جامع مهندسی مهاجرت، ارتقاء خودکار نسخه به نسخه Splunk و ایمن‌سازی RHEL در محیط ایزوله (Air-Gapped).",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
