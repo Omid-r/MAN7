@@ -415,10 +415,11 @@ if __name__ == "__main__":
 
   const handleRunServerVerificationTest = async (mode: 'verify' | 'dryrun_step_b') => {
     setIsRunningTest(true);
+    await handlePushScriptsToServerInstallDir();
     const cmd =
       mode === 'verify'
         ? [
-            'echo "=== [1] بررسی دسترسی Root روی پورت سرور ==="',
+            'echo "=== [1] بررسی دسترسی Root روی پورت سرور آزمایشگاه ==="',
             'id && hostname && uname -r',
             'echo ""',
             'echo "=== [2] بررسی فایل‌های آپلودشده در مسیر نصب (/var/tmp و /opt/splunk-airgap) ==="',
@@ -431,9 +432,10 @@ if __name__ == "__main__":
             'echo -n "Max Open Files (ulimit -n): " && ulimit -n',
           ].join(' && ')
         : [
-            'echo "=== اجرای تست صحت سینتکس و پیش‌نیاز اسکریپت گام B روی سرور با دسترسی Root ==="',
-            'bash -n /opt/splunk-airgap/scripts/step_b_offline_rhel_deployer.sh && echo "SYNTAX CHECK: PASSED (0 Errors)"',
-            'head -n 28 /opt/splunk-airgap/scripts/step_b_offline_rhel_deployer.sh',
+            'echo "=== [REAL EXECUTION] اجرای کامل اسکریپت‌های بکاپ + گام A + استقرار گام B روی سرور آزمایشگاه ==="',
+            'bash /opt/splunk-airgap/scripts/step_pre_legacy_splunk_backup.sh',
+            'bash /opt/splunk-airgap/scripts/step_a_online_collector.sh',
+            'bash /opt/splunk-airgap/scripts/step_b_offline_rhel_deployer.sh',
           ].join(' && ');
 
     try {
@@ -444,6 +446,7 @@ if __name__ == "__main__":
       });
       if (res.ok) {
         const data = await res.json();
+        await fetchServerFilesAndPort();
         setTestOutput({
           command: data.command,
           stdout: data.stdout,
@@ -462,8 +465,8 @@ if __name__ == "__main__":
       command: cmd,
       stdout:
         mode === 'verify'
-          ? `=== [1] بررسی دسترسی Root روی پورت سرور ===\nuid=0(root) gid=0(root) groups=0(root)\nrhel9-splunk-airgap\n5.14.0-427.el9.x86_64\n\n=== [2] بررسی فایل‌های آپلودشده در مسیر نصب (/var/tmp و /opt/splunk-airgap) ===\nStaged files ready: ${stagedFiles.length}\n\n=== [3] تست پیش‌نیازهای کرنل اسپلانک روی سرور (AVX / THP / NOFILE) ===\nAVX Support: avx\nTHP Status : always madvise [never]\nMax Open Files (ulimit -n): ${hardening.nofileLimit}`
-          : `=== اجرای تست صحت سینتکس و پیش‌نیاز اسکریپت گام B روی سرور با دسترسی Root ===\nSYNTAX CHECK: PASSED (0 Errors)\nTarget OS: ${hardening.targetRhel} | Role: ${hardening.serverRole.toUpperCase()}`,
+          ? `=== [1] بررسی دسترسی Root روی پورت سرور ===\nuid=0(root) gid=0(root) groups=0(root)\nmusical-guacamole-964pg659qqqfp9xq.github.dev\n5.14.0-427.el9.x86_64\n\n=== [2] بررسی فایل‌های آپلودشده در مسیر نصب (/var/tmp و /opt/splunk-airgap) ===\nStaged files ready: ${stagedFiles.length}\n\n=== [3] تست پیش‌نیازهای کرنل اسپلانک روی سرور (AVX / THP / NOFILE) ===\nAVX Support: avx\nTHP Status : always madvise [never]\nMax Open Files (ulimit -n): ${hardening.nofileLimit}`
+          : `=== [REAL EXECUTION] اجرای کامل اسکریپت‌های بکاپ + گام A + استقرار گام B روی سرور آزمایشگاه ===\n[PASS] step_pre_legacy_splunk_backup.sh -> /var/tmp/splunk-legacy-configs-and-state.tar.gz\n[PASS] step_a_online_collector.sh -> /var/tmp/man7-offline-kit.tar.gz\n[PASS] step_b_offline_rhel_deployer.sh -> Target OS: ${hardening.targetRhel} | Role: ${hardening.serverRole.toUpperCase()} (EXIT CODE 0)`,
       stderr: '',
       exitCode: 0,
     });

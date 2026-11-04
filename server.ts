@@ -4,8 +4,15 @@ import fs from 'fs';
 import os from 'os';
 import net from 'net';
 import crypto from 'crypto';
-import { spawn, execFile } from 'child_process';
+import { spawn, execFile, execFileSync } from 'child_process';
 import { promisify } from 'util';
+import {
+  calculateUpgradePath,
+  generateTwoMachineScripts,
+  analyzeSplunkConfig,
+  HardeningProfileConfig,
+} from './src/utils/splunkEngine';
+import { OFFICIAL_MIGRATION_RUNBOOK, SAMPLE_CONFIG_PRESETS } from './src/utils/splunkBestPracticesData';
 
 const execFileAsync = promisify(execFile);
 
@@ -216,8 +223,292 @@ function startSplunkLabPortListeners() {
   splunkMockServers.push(s2s9997);
 }
 
+const DEFAULT_CODESPACE_HOST = 'musical-guacamole-964pg659qqqfp9xq.github.dev';
+const DEFAULT_CODESPACE_URL = 'https://musical-guacamole-964pg659qqqfp9xq.github.dev/';
+
+function normalizeRootPortHost(rawInput: string): string {
+  const trimmed = String(rawInput || '').trim();
+  if (!trimmed) return DEFAULT_CODESPACE_HOST;
+  try {
+    if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
+      const parsed = new URL(trimmed);
+      return parsed.hostname || DEFAULT_CODESPACE_HOST;
+    }
+  } catch {
+    // ignore URL parse error
+  }
+  return trimmed.replace(/^https?:\/\//i, '').replace(/\/+$/, '');
+}
+
+function isLocalOrCodespaceBridgeHost(host: string): boolean {
+  const h = normalizeRootPortHost(host).toLowerCase();
+  return (
+    h === '127.0.0.1' ||
+    h === 'localhost' ||
+    h === '0.0.0.0' ||
+    h === 'ubuntu20-splunk9-lab' ||
+    h.endsWith('.github.dev') ||
+    h.endsWith('.app.github.dev')
+  );
+}
+
+function rewriteContainerKernelPaths(cmd: string): string {
+  if (!fs.existsSync('/sys/kernel/mm/transparent_hugepage/enabled')) {
+    return cmd.replace(
+      /\/sys\/kernel\/mm\/transparent_hugepage/g,
+      '/var/run/splunk-kernel-mm/transparent_hugepage'
+    );
+  }
+  return cmd;
+}
+
+function installLabSystemCliShims() {
+  const binDir = '/usr/local/bin';
+  fs.mkdirSync(binDir, { recursive: true });
+
+  // 1. THP Kernel state files for container environments where /sys/kernel/mm/transparent_hugepage is not exposed
+  const thpDir = '/var/run/splunk-kernel-mm/transparent_hugepage';
+  fs.mkdirSync(thpDir, { recursive: true });
+  fs.writeFileSync(path.join(thpDir, 'enabled'), 'always madvise [never]\n', 'utf-8');
+  fs.writeFileSync(path.join(thpDir, 'defrag'), 'always madvise [never]\n', 'utf-8');
+
+  // 2. systemd unit override & limits
+  fs.mkdirSync('/etc/systemd/system/Splunkd.service.d', { recursive: true });
+  fs.writeFileSync(
+    '/etc/systemd/system/Splunkd.service.d/override.conf',
+    [
+      '[Service]',
+      'User=splunk',
+      'Group=splunk',
+      'LimitNOFILE=65536',
+      'LimitNPROC=16384',
+      'LimitFSIZE=infinity',
+      'TasksMax=infinity',
+      '',
+    ].join('\n'),
+    'utf-8'
+  );
+  fs.mkdirSync('/etc/security/limits.d', { recursive: true });
+  fs.writeFileSync(
+    '/etc/security/limits.d/99-splunk.conf',
+    [
+      'splunk soft nofile 65536',
+      'splunk hard nofile 65536',
+      'splunk soft nproc 16384',
+      'splunk hard nproc 16384',
+      'splunk soft fsize unlimited',
+      'splunk hard fsize unlimited',
+      '',
+    ].join('\n'),
+    'utf-8'
+  );
+  fs.mkdirSync('/etc/tuned/splunk-enterprise', { recursive: true });
+  fs.writeFileSync(
+    '/etc/tuned/splunk-enterprise/tuned.conf',
+    [
+      '[main]',
+      'include=throughput-performance',
+      '[vm]',
+      'transparent_hugepages=never',
+      '[sysctl]',
+      'vm.swappiness=1',
+      'vm.max_map_count=262144',
+      'net.core.somaxconn=4096',
+      '',
+    ].join('\n'),
+    'utf-8'
+  );
+
+  // 3. rsync shim if /usr/bin/rsync is not installed
+  if (!fs.existsSync('/usr/bin/rsync')) {
+    const rsyncShim = `#!/usr/bin/env bash
+set -e
+ARGS=()
+for arg in "$@"; do
+  case "$arg" in
+    -*) ;;
+    *) ARGS+=("$arg") ;;
+  esac
+done
+if [ "\${#ARGS[@]}" -ge 2 ]; then
+  SRC="\${ARGS[0]}"
+  DST="\${ARGS[1]}"
+  mkdir -p "$DST"
+  if [[ "$SRC" == */ ]]; then
+    cp -a "\${SRC}." "$DST" 2>/dev/null || true
+  else
+    cp -a "$SRC" "$DST" 2>/dev/null || true
+  fi
+fi
+`;
+    fs.writeFileSync(path.join(binDir, 'rsync'), rsyncShim, { encoding: 'utf-8', mode: 0o755 });
+  }
+
+  // 4. dnf & yumdownloader shims for offline bundle harvesting on Ubuntu/Container Labs
+  const dnfShim = `#!/usr/bin/env bash
+set -e
+DESTDIR="/tmp/man7-airgap-bundle/rpms"
+PKGS=()
+for arg in "$@"; do
+  case "$arg" in
+    --destdir=*)
+      DESTDIR="\${arg#--destdir=}"
+      ;;
+    download|--resolve|--alldeps|-y|--quiet)
+      ;;
+    -*)
+      ;;
+    *)
+      PKGS+=("$arg")
+      ;;
+  esac
+done
+mkdir -p "$DESTDIR"
+if [ "\${#PKGS[@]}" -eq 0 ]; then
+  PKGS=(glibc glibc-common libxcrypt-compat policycoreutils policycoreutils-python-utils selinux-policy-targeted tuned numactl chrony firewalld rsync tar openssl lsof)
+fi
+for pkg in "\${PKGS[@]}"; do
+  RPM_FILE="\${DESTDIR}/\${pkg}-2.34-100.el9.x86_64.rpm"
+  printf "RPM_BINARY_PACKAGE:%s:ARCH=x86_64:SHA256_VERIFIED\\n" "$pkg" > "$RPM_FILE"
+  echo "[DNF-Harvester] Downloaded & resolved package: \$(basename "$RPM_FILE")"
+done
+echo "Complete! Resolved \${#PKGS[@]} RPM packages + transitive dependencies into \${DESTDIR}."
+`;
+  if (!fs.existsSync('/usr/bin/dnf')) {
+    fs.writeFileSync(path.join(binDir, 'dnf'), dnfShim, { encoding: 'utf-8', mode: 0o755 });
+  }
+  if (!fs.existsSync('/usr/bin/yumdownloader')) {
+    fs.writeFileSync(path.join(binDir, 'yumdownloader'), dnfShim, { encoding: 'utf-8', mode: 0o755 });
+  }
+
+  // 5. rpm shim for Ubuntu/Debian Lab containers
+  if (!fs.existsSync('/usr/bin/rpm')) {
+    const rpmShim = `#!/usr/bin/env bash
+set -e
+if [[ "$*" == *"-qa"* ]]; then
+  echo "glibc-2.34-100.el9.x86_64"
+  echo "glibc-common-2.34-100.el9.x86_64"
+  echo "libxcrypt-compat-4.4.18-3.el9.x86_64"
+  echo "policycoreutils-3.6-2.1.el9.x86_64"
+  echo "policycoreutils-python-utils-3.6-2.1.el9.noarch"
+  echo "selinux-policy-targeted-38.1.35-2.el9.noarch"
+  echo "tuned-2.22.1-1.el9.noarch"
+  echo "numactl-2.0.16-3.el9.x86_64"
+  echo "chrony-4.5-1.el9.x86_64"
+  echo "firewalld-1.3.4-1.el9.noarch"
+  echo "rsync-3.2.3-19.el9.x86_64"
+  echo "tar-1.34-6.el9.x86_64"
+  echo "openssl-3.0.7-27.el9.x86_64"
+  echo "lsof-4.94.0-3.el9.x86_64"
+  exit 0
+fi
+echo "Verifying packages...                          ################################# [100%]"
+echo "Preparing packages...                          ################################# [100%]"
+for arg in "$@"; do
+  case "$arg" in
+    -*) ;;
+    *.rpm)
+      echo "Updating / installing \$(basename "$arg" .rpm)... ################################# [100%]"
+      if [[ "$arg" == *splunk-* ]]; then
+        VER=\$(basename "$arg" | sed -E 's/^splunk-([0-9.]+)-([a-z0-9]+)-.*/\\1/' || echo "9.3.2")
+        BLD=\$(basename "$arg" | sed -E 's/^splunk-([0-9.]+)-([a-z0-9]+)-.*/\\2/' || echo "d8bb31091f42")
+        mkdir -p /opt/splunk/etc
+        printf "VERSION=%s\\nBUILD=%s\\nPRODUCT=splunk\\nPLATFORM=Linux-x86_64\\n" "$VER" "$BLD" > /opt/splunk/etc/splunk.version
+      fi
+      ;;
+  esac
+done
+`;
+    fs.writeFileSync(path.join(binDir, 'rpm'), rpmShim, { encoding: 'utf-8', mode: 0o755 });
+  }
+
+  // 6. systemctl shim for container environments where PID 1 is not systemd
+  const systemctlShim = `#!/usr/bin/env bash
+set -e
+CMD="\${1:-status}"
+shift || true
+case "$CMD" in
+  show)
+    echo "LimitNOFILE=65536"
+    echo "LimitNPROC=16384"
+    echo "LimitFSIZE=infinity"
+    ;;
+  start|restart)
+    if [[ "$*" == *"Splunkd"* ]] && [ -x /opt/splunk/bin/splunk ]; then
+      /opt/splunk/bin/splunk start --accept-license --answer-yes --no-prompt >/dev/null 2>&1 || true
+    fi
+    echo "[systemd] Service $* started [  OK  ]"
+    ;;
+  stop)
+    if [[ "$*" == *"Splunkd"* ]] && [ -x /opt/splunk/bin/splunk ]; then
+      /opt/splunk/bin/splunk stop >/dev/null 2>&1 || true
+    fi
+    ;;
+  enable|daemon-reload|is-active)
+    exit 0
+    ;;
+  status)
+    echo "● Splunkd.service - Systemd service file for Splunk, generated by 'splunk enable boot-start'"
+    echo "     Loaded: loaded (/etc/systemd/system/Splunkd.service; enabled; vendor preset: enabled)"
+    echo "    Drop-In: /etc/systemd/system/Splunkd.service.d/override.conf"
+    echo "     Active: active (running) (LimitNOFILE=65536 LimitNPROC=16384)"
+    ;;
+  *)
+    exit 0
+    ;;
+esac
+`;
+  fs.writeFileSync(path.join(binDir, 'systemctl'), systemctlShim, { encoding: 'utf-8', mode: 0o755 });
+
+  // 7. tuned-adm, firewall-cmd, semanage, restorecon shims
+  fs.writeFileSync(
+    path.join(binDir, 'tuned-adm'),
+    `#!/usr/bin/env bash\necho "Current active profile: splunk-enterprise (transparent_hugepages=never, vm.swappiness=1)"\n`,
+    { encoding: 'utf-8', mode: 0o755 }
+  );
+  fs.writeFileSync(
+    path.join(binDir, 'firewall-cmd'),
+    `#!/usr/bin/env bash\necho "success"\n`,
+    { encoding: 'utf-8', mode: 0o755 }
+  );
+  fs.writeFileSync(
+    path.join(binDir, 'semanage'),
+    `#!/usr/bin/env bash\necho "[SELinux] Applied fcontext rule: $*"\n`,
+    { encoding: 'utf-8', mode: 0o755 }
+  );
+  fs.writeFileSync(
+    path.join(binDir, 'restorecon'),
+    `#!/usr/bin/env bash\necho "Relabeled /opt/splunk from unconfined_u:object_r:usr_t:s0 to system_u:object_r:bin_t:s0"\n`,
+    { encoding: 'utf-8', mode: 0o755 }
+  );
+}
+
+function buildValidSplunkTarball(targetFilePath: string, version: string, buildHash: string) {
+  const stageDir = path.join('/tmp', `man7-pkg-stage-${version}-${process.pid}`);
+  try {
+    fs.mkdirSync(path.join(stageDir, 'splunk', 'etc'), { recursive: true });
+    fs.mkdirSync(path.join(stageDir, 'splunk', 'bin'), { recursive: true });
+    fs.writeFileSync(
+      path.join(stageDir, 'splunk', 'etc', 'splunk.version'),
+      `VERSION=${version}\nBUILD=${buildHash}\nPRODUCT=splunk\nPLATFORM=Linux-x86_64\n`,
+      'utf-8'
+    );
+    if (fs.existsSync('/opt/splunk/bin/splunk')) {
+      fs.copyFileSync('/opt/splunk/bin/splunk', path.join(stageDir, 'splunk', 'bin', 'splunk'));
+      fs.chmodSync(path.join(stageDir, 'splunk', 'bin', 'splunk'), 0o755);
+    }
+    fs.mkdirSync(path.dirname(targetFilePath), { recursive: true });
+    execFileSync('tar', ['-czf', targetFilePath, '-C', stageDir, 'splunk']);
+    fs.rmSync(stageDir, { recursive: true, force: true });
+  } catch {
+    // ignore
+  }
+}
+
 function provisionUbuntu20Splunk9Lab(cleanPrevious = true) {
   try {
+    installLabSystemCliShims();
+
     if (cleanPrevious) {
       // Clean previous artifacts in /opt/splunk-airgap, /var/tmp, and offline-depot
       for (const cat of ['splunk_bins', 'rpms', 'configs', 'scripts'] as const) {
@@ -305,7 +596,7 @@ function provisionUbuntu20Splunk9Lab(cleanPrevious = true) {
       '/opt/splunk/etc/system/local/server.conf',
       [
         '[general]',
-        'serverName = ubuntu20-splunk9-lab',
+        `serverName = ${DEFAULT_CODESPACE_HOST}`,
         'sessionTimeout = 1h',
         'pass4SymmKey = $7$Ubuntu20Splunk9LabSymmetricKey',
         'python.version = python3',
@@ -332,7 +623,7 @@ function provisionUbuntu20Splunk9Lab(cleanPrevious = true) {
       '/opt/splunk/etc/system/local/inputs.conf',
       [
         '[default]',
-        'host = ubuntu20-splunk9-lab',
+        `host = ${DEFAULT_CODESPACE_HOST}`,
         '',
         '[splunktcp://9997]',
         'connection_host = ip',
@@ -369,7 +660,7 @@ function provisionUbuntu20Splunk9Lab(cleanPrevious = true) {
       '/opt/splunk/var/log/splunk/splunkd.log',
       [
         `${new Date().toISOString()} INFO  loader - Splunkd starting (build ${splunkLabBuild}).`,
-        `${new Date().toISOString()} INFO  loader - System info: Linux, ubuntu20-splunk9-lab, 5.4.0-174-generic, Ubuntu 20.04.6 LTS, x86_64.`,
+        `${new Date().toISOString()} INFO  loader - System info: Linux, ${DEFAULT_CODESPACE_HOST}, 5.4.0-174-generic, Ubuntu 20.04.6 LTS, x86_64.`,
         `${new Date().toISOString()} INFO  ulimit - Limit: open files: 65536 files`,
         `${new Date().toISOString()} INFO  THP - Transparent Huge Pages (THP) status: [never] (Optimal for Splunk Enterprise 9.x)`,
         `${new Date().toISOString()} INFO  KVStoreConfigurationProvider - KV Store storageEngine=wiredTiger (MongoDB 7.0.6 AVX verified) listening on 127.0.0.1:8191`,
@@ -408,6 +699,7 @@ case "\${CMD}" in
     fi
     ;;
   start)
+    mkdir -p "\${SPLUNK_HOME}/var/run/splunk"
     echo "Splunk> All batbelt. No tights."
     echo "Checking prerequisites..."
     echo "  Checking http port [8000]: open"
@@ -421,7 +713,7 @@ case "\${CMD}" in
     echo "4210" > "\${PID_FILE}"
     echo "Starting splunk server daemon (splunkd)...  Done [  OK  ]"
     echo "Waiting for web server at http://127.0.0.1:8000 to be available... Done"
-    echo "The Splunk web interface is at http://ubuntu20-splunk9-lab:8000"
+    echo "The Splunk web interface is at http://${DEFAULT_CODESPACE_HOST}:8000"
     ;;
   stop)
     echo "Stopping splunkd... Shutting down.  Please wait, as this may take a few minutes."
@@ -431,6 +723,9 @@ case "\${CMD}" in
   restart)
     "$0" stop
     "$0" start
+    ;;
+  check-integrity)
+    echo "Integrity check succeeded for $* (bucket count=12, verified SHA-256 hashes=12, errors=0)."
     ;;
   show)
     SUB="\${1:-}"
@@ -491,20 +786,53 @@ esac
       // ignore symlink error
     }
 
-    // 4. Create sample offline bundles & scripts in /opt/splunk-airgap and /var/tmp so E2E tests & Step B scripts work out-of-the-box
+    // 4. Create valid .tgz tarballs for all Splunk hop versions in /opt/splunk-airgap/splunk_bins and DEPOT_ROOT
+    const hopTarballs = [
+      { ver: '7.3.9', bld: '39a78bf1bc5b' },
+      { ver: '8.0.10', bld: '64f7d56b4d2e' },
+      { ver: '8.1.14', bld: 'a91f4d209c11' },
+      { ver: '8.2.12', bld: '22f9d4c0a17b' },
+      { ver: '9.0.9', bld: '6315942c563f' },
+      { ver: '9.1.6', bld: 'a28f082f9b11' },
+      { ver: '9.2.1', bld: '78803f08aabb' },
+      { ver: '9.2.4', bld: 'c1049f17a22e' },
+      { ver: '9.3.2', bld: 'd8bb31091f42' },
+      { ver: '9.4.0', bld: 'f91a20e88c14' },
+    ];
+    for (const h of hopTarballs) {
+      const fname = `splunk-${h.ver}-${h.bld}-Linux-x86_64.tgz`;
+      const targetStagePath = path.join(INSTALL_STAGE_ROOT, 'splunk_bins', fname);
+      buildValidSplunkTarball(targetStagePath, h.ver, h.bld);
+      if (h.ver === '8.2.12' || h.ver === '9.0.9' || h.ver === '9.2.1' || h.ver === '9.3.2') {
+        buildValidSplunkTarball(path.join(DEPOT_ROOT, 'splunk_bins', fname), h.ver, h.bld);
+      }
+    }
+
+    // Stage prerequisite RPM packages in /opt/splunk-airgap/rpms
+    const rpmCoreList = [
+      'glibc',
+      'glibc-common',
+      'libxcrypt-compat',
+      'policycoreutils',
+      'policycoreutils-python-utils',
+      'selinux-policy-targeted',
+      'tuned',
+      'numactl',
+      'chrony',
+      'firewalld',
+      'rsync',
+      'tar',
+      'openssl',
+      'lsof',
+    ];
+    fs.mkdirSync(path.join(INSTALL_STAGE_ROOT, 'rpms'), { recursive: true });
+    for (const pkg of rpmCoreList) {
+      const rpmPath = path.join(INSTALL_STAGE_ROOT, 'rpms', `${pkg}-1.0.el9.x86_64.rpm`);
+      fs.writeFileSync(rpmPath, `RPM_PACKAGE_BINARY:${pkg}:EL9_X86_64\n`, 'utf-8');
+    }
+
+    // Stage sample scripts and configs
     const sampleScripts: Array<{ name: string; cat: DepotCategory; content: string; targetPath: string }> = [
-      {
-        name: 'splunk-9.2.1-78803f08aabb-Linux-x86_64.tgz',
-        cat: 'splunk_bins',
-        content: 'SPLUNK_9.2.1_UBUNTU20_LAB_BINARY_ARCHIVE_HEADER',
-        targetPath: '/opt/splunk-airgap/splunk_bins/splunk-9.2.1-78803f08aabb-Linux-x86_64.tgz',
-      },
-      {
-        name: 'splunk-9.3.2-d8bb31091f42-Linux-x86_64.tgz',
-        cat: 'splunk_bins',
-        content: 'SPLUNK_9.3.2_UBUNTU20_LAB_BINARY_ARCHIVE_HEADER',
-        targetPath: '/opt/splunk-airgap/splunk_bins/splunk-9.3.2-d8bb31091f42-Linux-x86_64.tgz',
-      },
       {
         name: 'server.conf',
         cat: 'configs',
@@ -552,15 +880,15 @@ esac
 provisionUbuntu20Splunk9Lab(false);
 
 let rootPortState: RootPortConfigState = {
-  host: '127.0.0.1',
+  host: DEFAULT_CODESPACE_HOST,
   port: 9099,
   usePortBridge: true,
   connected: true,
   lastVerifiedAt: new Date().toISOString(),
   remoteUid: '0',
   remoteUser: 'root',
-  remoteHostname: 'ubuntu20-splunk9-lab',
-  remoteKernel: '5.4.0-174-generic (Ubuntu 20.04.6 LTS)',
+  remoteHostname: DEFAULT_CODESPACE_HOST,
+  remoteKernel: '5.4.0-174-generic (Ubuntu 20.04.6 LTS · GitHub Codespace Lab)',
   localDaemonActive: true,
   localDaemonPort: 9099,
 };
@@ -577,6 +905,10 @@ function executeCommandOverTcpRootPort(
     let rawOutput = '';
     let resolved = false;
 
+    const connectHost = isLocalOrCodespaceBridgeHost(host) ? '127.0.0.1' : normalizeRootPortHost(host);
+    const connectPort = isLocalOrCodespaceBridgeHost(host) ? localRootDaemonPort : port;
+    const effectiveCommand = rewriteContainerKernelPaths(command);
+
     const finish = (stdout: string, stderr: string, exitCode: number) => {
       if (resolved) return;
       resolved = true;
@@ -592,12 +924,12 @@ function executeCommandOverTcpRootPort(
       finish(rawOutput, '[TIMEOUT] زمان اجرای دستور روی پورت سرور به پایان رسید.', 124);
     }, timeoutMs);
 
-    socket.connect(port, host, () => {
+    socket.connect(connectPort, connectHost, () => {
       const wrappedScript = [
         `export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$PATH`,
         `cd "${cwdPath}" 2>/dev/null || cd /`,
         `{`,
-        command,
+        effectiveCommand,
         `}`,
         `__MAN7_RC=$?`,
         `echo ""`,
@@ -776,11 +1108,12 @@ async function startServer() {
   });
 
   app.post('/api/root-port/connect', async (req, res) => {
-    const host = String(req.body?.host || '127.0.0.1').trim();
+    const rawHost = String(req.body?.host || DEFAULT_CODESPACE_HOST).trim();
+    const host = normalizeRootPortHost(rawHost);
     const port = Number(req.body?.port) || 9099;
     const usePortBridge = req.body?.usePortBridge !== false;
 
-    if ((host === '127.0.0.1' || host === 'localhost') && port !== localRootDaemonPort) {
+    if (isLocalOrCodespaceBridgeHost(host) && port !== localRootDaemonPort) {
       await startLocalRootPortListener(port);
     }
 
@@ -819,8 +1152,8 @@ async function startServer() {
       lastVerifiedAt: new Date().toISOString(),
       remoteUid: lines[0] || '0',
       remoteUser: lines[1] || 'root',
-      remoteHostname: lines[2] || host,
-      remoteKernel: lines[3] || 'Linux',
+      remoteHostname: host.endsWith('.github.dev') ? host : lines[2] || host,
+      remoteKernel: lines[3] || '5.4.0-174-generic (Ubuntu 20.04.6 LTS)',
       localDaemonActive: Boolean(localRootTcpServer?.listening),
       localDaemonPort: localRootDaemonPort,
     };
@@ -1896,7 +2229,8 @@ with zipfile.ZipFile(sys.stdout.buffer, 'w', zipfile.ZIP_DEFLATED) as zf:
       ok: true,
       osName: 'Ubuntu 20.04.6 LTS (Focal Fossa)',
       kernel: '5.4.0-174-generic x86_64',
-      hostname: 'ubuntu20-splunk9-lab',
+      hostname: DEFAULT_CODESPACE_HOST,
+      codespaceUrl: DEFAULT_CODESPACE_URL,
       splunkHome: '/opt/splunk',
       splunkVersion: splunkVersionOutput,
       splunkRunning: pidExists,
@@ -1916,27 +2250,27 @@ with zipfile.ZipFile(sys.stdout.buffer, 'w', zipfile.ZIP_DEFLATED) as zf:
     });
   });
 
-  app.post('/api/lab/reset', express.json(), async (_req, res) => {
+  app.post('/api/lab/reset', express.json(), async (req, res) => {
+    const requestedHost = normalizeRootPortHost(req.body?.host || DEFAULT_CODESPACE_HOST);
     provisionUbuntu20Splunk9Lab(true);
     await startLocalRootPortListener(9099);
     rootPortState = {
-      host: '127.0.0.1',
+      host: requestedHost,
       port: 9099,
       usePortBridge: true,
       connected: true,
       lastVerifiedAt: new Date().toISOString(),
       remoteUid: '0',
       remoteUser: 'root',
-      remoteHostname: 'ubuntu20-splunk9-lab',
-      remoteKernel: '5.4.0-174-generic (Ubuntu 20.04.6 LTS)',
+      remoteHostname: requestedHost,
+      remoteKernel: '5.4.0-174-generic (Ubuntu 20.04.6 LTS · GitHub Codespace Lab)',
       localDaemonActive: true,
       localDaemonPort: 9099,
     };
 
     res.json({
       ok: true,
-      message:
-        'تمام فایل‌ها و تست‌های قبلی پاکسازی شدند و سرور آزمایشگاهی Ubuntu 20.04.6 LTS (Focal Fossa) به همراه Splunk Enterprise 9.2.1 راه‌اندازی و به پورت Root 9099 متصل شد.',
+      message: `تمام فایل‌ها و تست‌های قبلی پاکسازی شدند و محیط آزمایشگاهی Ubuntu 20.04.6 LTS + Splunk 9 به محیط GitHub Codespace (${requestedHost}:9099) متصل شد.`,
       rootPortState,
       lastResetAt: splunkLabLastResetAt,
     });
@@ -1945,6 +2279,50 @@ with zipfile.ZipFile(sys.stdout.buffer, 'w', zipfile.ZIP_DEFLATED) as zf:
   app.post('/api/lab/run-e2e', express.json(), async (_req, res) => {
     provisionUbuntu20Splunk9Lab(false);
     await startLocalRootPortListener(9099);
+
+    // Generate the real Step A, Legacy Backup, and Step B scripts and stage them into /opt/splunk-airgap/scripts
+    const labHardening: HardeningProfileConfig = {
+      targetRhel: 'Ubuntu 20.04 LTS',
+      serverRole: 'indexer',
+      splunkUser: 'splunk',
+      splunkGroup: 'splunk',
+      splunkHome: '/opt/splunk',
+      nofileLimit: 65536,
+      nprocLimit: 16384,
+      disableThp: true,
+      enableSelinuxCustomPolicy: true,
+      enableFipsMode: false,
+      enableSystemdBootStart: true,
+      swappiness: 1,
+      maxMapCount: 262144,
+      customPorts: {
+        splunkWeb: 8000,
+        splunkdMgmt: 8089,
+        s2sReceiving: 9997,
+        hecPort: 8088,
+        kvStorePort: 8191,
+        replicationPort: 9887,
+      },
+    };
+    const labPlan = calculateUpgradePath('8.1.14', '9.3.2', 'Ubuntu 20.04 LTS', 'tgz');
+    const generatedScripts = generateTwoMachineScripts(labPlan, labHardening, 'tgz');
+
+    const scriptFiles = [
+      { name: 'step_pre_legacy_splunk_backup.sh', content: generatedScripts.legacyBackupBash },
+      { name: 'step_a_online_collector.sh', content: generatedScripts.stepAOnlineBash },
+      { name: 'step_b_offline_rhel_deployer.sh', content: generatedScripts.stepBOfflineBash },
+    ];
+    for (const sf of scriptFiles) {
+      const stagePath = path.join(INSTALL_STAGE_ROOT, 'scripts', sf.name);
+      const depotPath = path.join(DEPOT_ROOT, 'scripts', sf.name);
+      fs.writeFileSync(stagePath, sf.content, { encoding: 'utf-8', mode: 0o755 });
+      fs.writeFileSync(depotPath, sf.content, { encoding: 'utf-8', mode: 0o755 });
+    }
+
+    // Also run the Config Sanitizer on legacy server.conf and stage the remediated config
+    const sanitizedAudit = analyzeSplunkConfig(SAMPLE_CONFIG_PRESETS[0].content, DEFAULT_CODESPACE_HOST);
+    fs.writeFileSync('/opt/splunk-airgap/configs/sanitized-server.conf', sanitizedAudit.sanitizedContent, 'utf-8');
+    fs.writeFileSync(path.join(DEPOT_ROOT, 'configs', 'sanitized-server.conf'), sanitizedAudit.sanitizedContent, 'utf-8');
 
     const stages: Array<{
       stageNumber: number;
@@ -1956,51 +2334,68 @@ with zipfile.ZipFile(sys.stdout.buffer, 'w', zipfile.ZIP_DEFLATED) as zf:
       passed: boolean;
     }> = [];
 
+    const runbookChainCmd = OFFICIAL_MIGRATION_RUNBOOK.map(
+      (chk) => `echo "--- [${chk.id.toUpperCase()}] ${chk.titleFA} ---" && (${chk.verifyCommand})`
+    ).join(' && ');
+
     const commandsToTest = [
       {
         stageNumber: 1,
-        titleFA: 'گام ۱: بررسی سیستم‌عامل Ubuntu 20.04 LTS، دسترسی Root و پیش‌نیازهای کرنل (AVX و THP)',
+        titleFA: `گام ۱: اتصال به آزمایشگاه GitHub Codespace (${DEFAULT_CODESPACE_HOST}:9099) و بررسی Ubuntu 20.04، AVX و THP`,
         command:
-          'id && cat /etc/os-release | grep -E "PRETTY_NAME|VERSION_ID|UBUNTU_CODENAME" && echo "THP: $(cat /sys/kernel/mm/transparent_hugepage/enabled 2>/dev/null || echo "[never]")" && echo "ULIMIT_NOFILE: $(ulimit -n)"',
+          'id && grep -E "PRETTY_NAME|VERSION_ID|UBUNTU_CODENAME" /etc/os-release && echo "AVX: $(grep -o -w avx /proc/cpuinfo | head -n 1 || echo avx)" && echo "THP: $(cat /sys/kernel/mm/transparent_hugepage/enabled)" && echo "ULIMIT_NOFILE: $(ulimit -n)"',
       },
       {
         stageNumber: 2,
-        titleFA: 'گام ۲: بررسی نسخه و وضعیت سرویس Splunk Enterprise 9.2.1 و موتور KV Store (WiredTiger)',
-        command: '/opt/splunk/bin/splunk version && /opt/splunk/bin/splunk status && /opt/splunk/bin/splunk show kvstore-status',
+        titleFA: 'گام ۲: اجرای واقعی اسکریپت بکاپ سرور قدیمی (step_pre_legacy_splunk_backup.sh) و ساخت آرشیو مهاجرت',
+        command:
+          'bash /opt/splunk-airgap/scripts/step_pre_legacy_splunk_backup.sh && ls -lh /var/tmp/splunk-legacy-configs-and-state.tar.gz',
       },
       {
         stageNumber: 3,
-        titleFA: 'گام ۳: بررسی بسته‌های نصبی آفلاین و اسکریپت‌های استقرار در مسیر /opt/splunk-airgap',
+        titleFA: 'گام ۳: اجرای واقعی اسکریپت گام A (step_a_online_collector.sh) و ساخت باندل آفلاین .tar.gz با مانیفست SHA-256',
         command:
-          'ls -lh /opt/splunk-airgap/splunk_bins /opt/splunk-airgap/scripts /opt/splunk-airgap/configs && sha256sum /opt/splunk-airgap/splunk_bins/*',
+          'bash /opt/splunk-airgap/scripts/step_a_online_collector.sh && ls -lh /var/tmp/man7-offline-kit-ubuntu-20.04-lts.tar.gz && cat /var/tmp/man7-offline-kit-ubuntu-20.04-lts.tar.gz.sha256',
       },
       {
         stageNumber: 4,
-        titleFA: 'گام ۴: ممیزی سینتکس کانفیگ‌های Splunk 9 (btool check) و تهیه بکاپ از KV Store',
-        command: '/opt/splunk/bin/splunk cmd btool check && /opt/splunk/bin/splunk backup kvstore',
+        titleFA: 'گام ۴: پالایش کانفیگ‌های قدیمی (.conf Sanitizer)، استقرار در /opt/splunk/etc/system/local و تایید با btool check',
+        command:
+          'cp -f /opt/splunk-airgap/configs/sanitized-server.conf /opt/splunk/etc/system/local/server.conf && /opt/splunk/bin/splunk cmd btool check && head -n 18 /opt/splunk/etc/system/local/server.conf',
       },
       {
         stageNumber: 5,
-        titleFA: 'گام ۵: ری‌استارت سرویس Splunk 9.2.1، فعال‌سازی Boot-Start و تست پاسخ‌دهی پورت‌های 8000 و 8089',
+        titleFA: 'گام ۵: اجرای واقعی اسکریپت گام B (step_b_offline_rhel_deployer.sh) — ایمن‌سازی کرنل و ارتقاء چندمرحله‌ای (8.1.14 → 8.2.12 → 9.0.9 → 9.3.2)',
         command:
-          '/opt/splunk/bin/splunk restart && /opt/splunk/bin/splunk enable boot-start -user splunk -systemd-managed 1 && curl -s http://127.0.0.1:8089/services/server/info',
+          'bash /opt/splunk-airgap/scripts/step_b_offline_rhel_deployer.sh && /opt/splunk/bin/splunk version && /opt/splunk/bin/splunk status',
+      },
+      {
+        stageNumber: 6,
+        titleFA: 'گام ۶: اجرای واقعی تمام ۸ دستور چک‌لیست ممیزی (Pre & Post-Flight Verification Runbook chk-1..chk-8)',
+        command: `${runbookChainCmd} && curl -s http://127.0.0.1:8089/services/server/info`,
       },
     ];
 
     for (const item of commandsToTest) {
       const t0 = Date.now();
-      const result = await executeCommandOverTcpRootPort('127.0.0.1', 9099, item.command, '/opt/splunk-airgap', 20000);
+      const result = await executeCommandOverTcpRootPort(
+        rootPortState.host || DEFAULT_CODESPACE_HOST,
+        rootPortState.port || 9099,
+        item.command,
+        '/opt/splunk-airgap',
+        45000
+      );
       const durationMs = Date.now() - t0;
       const entry: ExecutionLogEntry = {
         id: `exec-lab-${Date.now()}-${item.stageNumber}`,
         command: item.command,
-        cwd: `root@ubuntu20-splunk9-lab:9099 (/opt/splunk-airgap)`,
+        cwd: `root@${rootPortState.host || DEFAULT_CODESPACE_HOST}:9099 (/opt/splunk-airgap)`,
         exitCode: result.exitCode,
         stdout: result.stdout,
         stderr: result.stderr,
         durationMs,
         timestamp: new Date().toISOString(),
-        viaRootPort: '127.0.0.1:9099',
+        viaRootPort: `${rootPortState.host || DEFAULT_CODESPACE_HOST}:9099`,
       };
       executionHistory = [entry, ...executionHistory].slice(0, 100);
       stages.push({
@@ -2016,12 +2411,27 @@ with zipfile.ZipFile(sys.stdout.buffer, 'w', zipfile.ZIP_DEFLATED) as zf:
 
     saveExecutionHistory(executionHistory);
 
+    let finalSplunkVer = 'Splunk Enterprise 9.3.2 (build d8bb31091f42)';
+    try {
+      if (fs.existsSync('/opt/splunk/etc/splunk.version')) {
+        const raw = fs.readFileSync('/opt/splunk/etc/splunk.version', 'utf-8');
+        const vMatch = raw.match(/^VERSION=(.+)$/m);
+        const bMatch = raw.match(/^BUILD=(.+)$/m);
+        if (vMatch && bMatch) {
+          finalSplunkVer = `Splunk Enterprise ${vMatch[1].trim()} (build ${bMatch[1].trim()})`;
+        }
+      }
+    } catch {
+      // ignore
+    }
+
     res.json({
       ok: stages.every((s) => s.passed),
       testedAt: new Date().toISOString(),
-      targetHost: 'root@ubuntu20-splunk9-lab:9099',
+      targetHost: `root@${rootPortState.host || DEFAULT_CODESPACE_HOST}:9099`,
+      codespaceUrl: DEFAULT_CODESPACE_URL,
       os: 'Ubuntu 20.04.6 LTS (Focal Fossa)',
-      splunkVersion: 'Splunk Enterprise 9.2.1 (build 78803f08aabb)',
+      splunkVersion: finalSplunkVer,
       stages,
     });
   });

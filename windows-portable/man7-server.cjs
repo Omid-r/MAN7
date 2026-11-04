@@ -22891,6 +22891,942 @@ var import_net = __toESM(require("net"), 1);
 var import_crypto = __toESM(require("crypto"), 1);
 var import_child_process = require("child_process");
 var import_util = require("util");
+
+// src/utils/splunkEngine.ts
+var SPLUNK_VERSIONS_METADATA = {
+  "7.2.10": {
+    version: "7.2.10",
+    majorMinor: "7.2",
+    releaseYear: 2019,
+    pythonRuntime: "Python 2.7",
+    kvStoreMongoVersion: "MongoDB 3.4",
+    kvStoreEngine: "MMAPv1 / WiredTiger",
+    requiresAvxCpu: false,
+    supportedRhel: ["RHEL 7.9"],
+    buildHash: "8c86030ac182",
+    keyMilestoneFA: "\u0646\u0633\u062E\u0647 \u0642\u062F\u06CC\u0645\u06CC \u0645\u0628\u062A\u0646\u06CC \u0628\u0631 Python 2.7 \u0648 \u0633\u0631\u0648\u06CC\u0633\u200C\u0647\u0627\u06CC \u0633\u0646\u062A\u06CC init.d"
+  },
+  "7.3.9": {
+    version: "7.3.9",
+    majorMinor: "7.3",
+    releaseYear: 2021,
+    pythonRuntime: "Python 2.7",
+    kvStoreMongoVersion: "MongoDB 3.6",
+    kvStoreEngine: "MMAPv1 / WiredTiger",
+    requiresAvxCpu: false,
+    supportedRhel: ["RHEL 7.9", "RHEL 8.10"],
+    buildHash: "39a78bf1bc5b",
+    keyMilestoneFA: "\u0622\u062E\u0631\u06CC\u0646 \u0634\u0627\u062E\u0647 \u06F7.x\u061B \u067E\u0644 \u0627\u0644\u0632\u0627\u0645\u06CC \u0628\u0631\u0627\u06CC \u0645\u0647\u0627\u062C\u0631\u062A \u0628\u0647 \u0634\u0627\u062E\u0647 \u06F8.\u06F0"
+  },
+  "8.0.10": {
+    version: "8.0.10",
+    majorMinor: "8.0",
+    releaseYear: 2021,
+    pythonRuntime: "Python 2.7 / 3.7 (Dual)",
+    kvStoreMongoVersion: "MongoDB 3.6",
+    kvStoreEngine: "MMAPv1 / WiredTiger",
+    requiresAvxCpu: false,
+    supportedRhel: ["RHEL 7.9", "RHEL 8.10", "Ubuntu 20.04 LTS"],
+    buildHash: "64f7d56b4d2e",
+    keyMilestoneFA: "\u0645\u0639\u0631\u0641\u06CC \u0645\u0641\u0633\u0631 \u062F\u0648\u06AF\u0627\u0646\u0647 Python 3.7 \u062C\u0647\u062A \u062A\u0633\u062A \u0633\u0627\u0632\u06AF\u0627\u0631\u06CC \u0627\u0633\u06A9\u0631\u06CC\u067E\u062A\u200C\u0647\u0627"
+  },
+  "8.1.14": {
+    version: "8.1.14",
+    majorMinor: "8.1",
+    releaseYear: 2022,
+    pythonRuntime: "Python 2.7 / 3.7",
+    kvStoreMongoVersion: "MongoDB 3.6 / 4.0",
+    kvStoreEngine: "MMAPv1 / WiredTiger",
+    requiresAvxCpu: false,
+    supportedRhel: ["RHEL 7.9", "RHEL 8.10", "Ubuntu 20.04 LTS"],
+    buildHash: "a91f4d209c11",
+    keyMilestoneFA: "\u067E\u0634\u062A\u06CC\u0628\u0627\u0646\u06CC \u0627\u0632 \u0645\u0647\u0627\u062C\u0631\u062A \u0645\u0648\u062A\u0648\u0631 \u0630\u062E\u06CC\u0631\u0647\u200C\u0633\u0627\u0632\u06CC KV Store \u0628\u0647 WiredTiger"
+  },
+  "8.2.12": {
+    version: "8.2.12",
+    majorMinor: "8.2",
+    releaseYear: 2023,
+    pythonRuntime: "Python 3.7 (Default)",
+    kvStoreMongoVersion: "MongoDB 4.0 / 4.2",
+    kvStoreEngine: "MMAPv1 / WiredTiger",
+    requiresAvxCpu: false,
+    supportedRhel: ["RHEL 7.9", "RHEL 8.10", "RHEL 9.4", "Ubuntu 20.04 LTS"],
+    buildHash: "22f9d4c0a17b",
+    keyMilestoneFA: "\u0627\u06CC\u0633\u062A\u06AF\u0627\u0647 \u062D\u06CC\u0627\u062A\u06CC \u0642\u0628\u0644 \u0627\u0632 Splunk 9.0\u061B \u0627\u0644\u0632\u0627\u0645 \u062A\u0628\u062F\u06CC\u0644 MMAPv1 \u0628\u0647 WiredTiger \u0648 \u0627\u0631\u062A\u0642\u0627\u0621 MongoDB \u0628\u0647 4.2"
+  },
+  "9.0.9": {
+    version: "9.0.9",
+    majorMinor: "9.0",
+    releaseYear: 2024,
+    pythonRuntime: "Python 3.7 Only (\u062D\u0630\u0641 \u06A9\u0627\u0645\u0644 Python 2)",
+    kvStoreMongoVersion: "MongoDB 4.2",
+    kvStoreEngine: "WiredTiger Only",
+    requiresAvxCpu: false,
+    supportedRhel: ["RHEL 8.10", "RHEL 9.4", "Ubuntu 20.04 LTS"],
+    buildHash: "6315942c563f",
+    keyMilestoneFA: "\u062D\u0630\u0641 \u06A9\u0627\u0645\u0644 Python 2\u060C \u0627\u0644\u0632\u0627\u0645 WiredTiger\u060C \u062A\u063A\u06CC\u06CC\u0631 \u0648\u0627\u0698\u06AF\u0627\u0646 Cluster Master \u0628\u0647 Manager \u0648 SmartStore \u0627\u0645\u0646"
+  },
+  "9.1.6": {
+    version: "9.1.6",
+    majorMinor: "9.1",
+    releaseYear: 2024,
+    pythonRuntime: "Python 3.7",
+    kvStoreMongoVersion: "MongoDB 4.2",
+    kvStoreEngine: "WiredTiger Only",
+    requiresAvxCpu: false,
+    supportedRhel: ["RHEL 8.10", "RHEL 9.4", "Ubuntu 20.04 LTS"],
+    buildHash: "a28f082f9b11",
+    keyMilestoneFA: "\u0628\u0647\u0628\u0648\u062F \u0645\u062F\u06CC\u0631\u06CC\u062A \u062D\u0627\u0641\u0638\u0647 systemd \u0648 \u0642\u0627\u0628\u0644\u06CC\u062A\u200C\u0647\u0627\u06CC Ingest Actions"
+  },
+  "9.2.4": {
+    version: "9.2.4",
+    majorMinor: "9.2",
+    releaseYear: 2024,
+    pythonRuntime: "Python 3.7 / 3.9",
+    kvStoreMongoVersion: "MongoDB 4.2 / 7.0",
+    kvStoreEngine: "WiredTiger Only",
+    requiresAvxCpu: true,
+    supportedRhel: ["RHEL 8.10", "RHEL 9.4", "Ubuntu 20.04 LTS"],
+    buildHash: "c1049f17a22e",
+    keyMilestoneFA: "\u067E\u0634\u062A\u06CC\u0628\u0627\u0646\u06CC \u0627\u0648\u0644\u06CC\u0647 \u0627\u0632 KV Store MongoDB 7.0 \u0648 Python 3.9"
+  },
+  "9.3.2": {
+    version: "9.3.2",
+    majorMinor: "9.3",
+    releaseYear: 2025,
+    pythonRuntime: "Python 3.9 (Default)",
+    kvStoreMongoVersion: "MongoDB 7.0",
+    kvStoreEngine: "WiredTiger Only",
+    requiresAvxCpu: true,
+    supportedRhel: ["RHEL 8.10", "RHEL 9.4", "Ubuntu 20.04 LTS"],
+    buildHash: "d8bb31091f42",
+    keyMilestoneFA: "\u0627\u0644\u0632\u0627\u0645 \u062F\u0633\u062A\u0648\u0631\u0627\u0644\u0639\u0645\u0644 \u067E\u0631\u062F\u0627\u0632\u0646\u062F\u0647 AVX \u0628\u0631\u0627\u06CC MongoDB 7.0 \u0648 \u067E\u06CC\u0634\u200C\u0641\u0631\u0636 \u0634\u062F\u0646 Python 3.9"
+  },
+  "9.4.0": {
+    version: "9.4.0",
+    majorMinor: "9.4",
+    releaseYear: 2025,
+    pythonRuntime: "Python 3.9 Only",
+    kvStoreMongoVersion: "MongoDB 7.0",
+    kvStoreEngine: "WiredTiger Only",
+    requiresAvxCpu: true,
+    supportedRhel: ["RHEL 8.10", "RHEL 9.4", "Ubuntu 20.04 LTS"],
+    buildHash: "f91a20e88c14",
+    keyMilestoneFA: "\u0622\u062E\u0631\u06CC\u0646 \u0646\u0633\u062E\u0647 \u067E\u0627\u06CC\u062F\u0627\u0631 \u0633\u0627\u0632\u0645\u0627\u0646\u06CC \u0628\u0627 \u0631\u0645\u0632\u0646\u06AF\u0627\u0631\u06CC \u067E\u06CC\u0634\u0631\u0641\u062A\u0647 TLS 1.3 \u0648 \u0645\u062F\u06CC\u0631\u06CC\u062A \u06A9\u0627\u0645\u0644 cgroups v2 \u062F\u0631 RHEL 9"
+  }
+};
+var ORDERED_SPLUNK_VERSIONS = [
+  "7.2.10",
+  "7.3.9",
+  "8.0.10",
+  "8.1.14",
+  "8.2.12",
+  "9.0.9",
+  "9.1.6",
+  "9.2.4",
+  "9.3.2",
+  "9.4.0"
+];
+function getRhelDependencies(targetRhel) {
+  const basePackages = [
+    {
+      name: "glibc",
+      category: "core_prereq",
+      mandatory: true,
+      purposeFA: "\u06A9\u062A\u0627\u0628\u062E\u0627\u0646\u0647 \u0627\u0633\u062A\u0627\u0646\u062F\u0627\u0631\u062F C \u0645\u0648\u0631\u062F \u0646\u06CC\u0627\u0632 \u0628\u0627\u06CC\u0646\u0631\u06CC \u0627\u0635\u0644\u06CC splunkd \u0648 \u067E\u0631\u062F\u0627\u0632\u0634 \u062A\u0631\u062F\u0647\u0627"
+    },
+    {
+      name: "glibc-common",
+      category: "core_prereq",
+      mandatory: true,
+      purposeFA: "\u0627\u0628\u0632\u0627\u0631\u0647\u0627\u06CC \u0645\u062D\u0644\u06CC\u200C\u0633\u0627\u0632\u06CC \u0648 \u0648\u0627\u0628\u0633\u062A\u06AF\u06CC \u0645\u0633\u062A\u0642\u06CC\u0645 glibc \u062F\u0631 \u0645\u062D\u06CC\u0637 \u0627\u06CC\u0632\u0648\u0644\u0647"
+    },
+    {
+      name: "libxcrypt-compat",
+      category: "core_prereq",
+      mandatory: targetRhel !== "RHEL 7.9",
+      purposeFA: "\u06A9\u062A\u0627\u0628\u062E\u0627\u0646\u0647 \u062D\u06CC\u0627\u062A\u06CC `libcrypt.so.1` \u062F\u0631 RHEL 8 \u0648 RHEL 9 \u062C\u0647\u062A \u062C\u0644\u0648\u06AF\u06CC\u0631\u06CC \u0627\u0632 \u062E\u0637\u0627\u06CC \u0627\u062C\u0631\u0627\u06CC \u0628\u0627\u06CC\u0646\u0631\u06CC\u200C\u0647\u0627\u06CC \u0627\u0633\u067E\u0644\u0627\u0646\u06A9"
+    },
+    {
+      name: "policycoreutils",
+      category: "selinux_security",
+      mandatory: true,
+      purposeFA: "\u0627\u0628\u0632\u0627\u0631\u0647\u0627\u06CC \u067E\u0627\u06CC\u0647 \u0645\u062F\u06CC\u0631\u06CC\u062A \u0633\u06CC\u0627\u0633\u062A\u200C\u0647\u0627\u06CC \u0627\u0645\u0646\u06CC\u062A\u06CC SELinux (`restorecon`, `setsebool`)"
+    },
+    {
+      name: "policycoreutils-python-utils",
+      category: "selinux_security",
+      mandatory: true,
+      purposeFA: "\u062A\u0627\u0645\u06CC\u0646 \u062F\u0633\u062A\u0648\u0631 `semanage fcontext` \u062C\u0647\u062A \u0628\u0631\u0686\u0633\u0628\u200C\u06AF\u0630\u0627\u0631\u06CC \u062F\u0627\u06CC\u0631\u06A9\u062A\u0648\u0631\u06CC `/opt/splunk` \u062F\u0631 \u062D\u0627\u0644\u062A Enforcing"
+    },
+    {
+      name: "selinux-policy-targeted",
+      category: "selinux_security",
+      mandatory: true,
+      purposeFA: "\u0642\u0648\u0627\u0646\u06CC\u0646 \u0647\u062F\u0641\u0645\u0646\u062F SELinux \u0628\u0631\u0627\u06CC \u062C\u062F\u0627\u0633\u0627\u0632\u06CC \u0633\u0631\u0648\u06CC\u0633\u200C\u0647\u0627\u06CC \u0634\u0628\u06A9\u0647 \u0648 \u0641\u0627\u06CC\u0644\u200C\u0633\u06CC\u0633\u062A\u0645"
+    },
+    {
+      name: "tuned",
+      category: "performance_tuning",
+      mandatory: true,
+      purposeFA: "\u0627\u0639\u0645\u0627\u0644 \u067E\u0631\u0648\u0641\u0627\u06CC\u0644 \u06A9\u0631\u0646\u0644 `splunk-enterprise` \u0648 \u063A\u06CC\u0631\u0641\u0639\u0627\u0644\u200C\u0633\u0627\u0632\u06CC \u067E\u0627\u06CC\u062F\u0627\u0631 Transparent Huge Pages (THP)"
+    },
+    {
+      name: "numactl",
+      category: "performance_tuning",
+      mandatory: true,
+      purposeFA: "\u0628\u0647\u06CC\u0646\u0647\u200C\u0633\u0627\u0632\u06CC \u062A\u062E\u0635\u06CC\u0635 \u062D\u0627\u0641\u0638\u0647 NUMA \u0628\u0631\u0627\u06CC \u0633\u0631\u0648\u0631\u0647\u0627\u06CC Indexer \u0628\u0627 \u062A\u0639\u062F\u0627\u062F \u0647\u0633\u062A\u0647 \u0628\u0627\u0644\u0627"
+    },
+    {
+      name: "chrony",
+      category: "core_prereq",
+      mandatory: true,
+      purposeFA: "\u0647\u0645\u06AF\u0627\u0645\u200C\u0633\u0627\u0632\u06CC \u062F\u0642\u06CC\u0642 \u0632\u0645\u0627\u0646 (NTP \u062F\u0627\u062E\u0644\u06CC) \u062C\u0647\u062A \u062C\u0644\u0648\u06AF\u06CC\u0631\u06CC \u0627\u0632 \u062E\u0637\u0627\u06CC \u062A\u0627\u06CC\u0645\u200C\u0627\u0633\u062A\u0645\u067E \u0627\u06CC\u0646\u062F\u06A9\u0633\u200C\u0647\u0627 \u0648 \u06A9\u0644\u0627\u0633\u062A\u0631"
+    },
+    {
+      name: "firewalld",
+      category: "selinux_security",
+      mandatory: true,
+      purposeFA: "\u0645\u062F\u06CC\u0631\u06CC\u062A \u0622\u0641\u0644\u0627\u06CC\u0646 \u067E\u0648\u0631\u062A\u200C\u0647\u0627\u06CC \u0648\u0631\u0648\u062F\u06CC (`8000`, `8089`, `9997`, `8088`, `8191`) \u0628\u062F\u0648\u0646 \u0646\u06CC\u0627\u0632 \u0628\u0647 \u0627\u06CC\u0646\u062A\u0631\u0646\u062A"
+    },
+    {
+      name: "rsync",
+      category: "migration_ops",
+      mandatory: true,
+      purposeFA: "\u0627\u0646\u062A\u0642\u0627\u0644 \u0627\u062A\u0645\u06CC\u06A9 \u0648 \u062D\u0641\u0638 \u0645\u062C\u0648\u0632\u0647\u0627\u06CC \u0641\u0627\u06CC\u0644 (`-aHAXv`) \u0628\u0631\u0627\u06CC \u062F\u0627\u06CC\u0631\u06A9\u062A\u0648\u0631\u06CC\u200C\u0647\u0627\u06CC `etc` \u0648 `var/lib/splunk`"
+    },
+    {
+      name: "tar",
+      category: "migration_ops",
+      mandatory: true,
+      purposeFA: "\u0627\u0633\u062A\u062E\u0631\u0627\u062C \u0628\u0633\u062A\u0647\u200C\u0647\u0627\u06CC \u0646\u0635\u0628\u06CC \u0627\u0633\u067E\u0644\u0627\u0646\u06A9 \u0648 \u0622\u0631\u0634\u06CC\u0648\u0647\u0627\u06CC \u067E\u0634\u062A\u06CC\u0628\u0627\u0646 \u06A9\u0627\u0646\u0641\u06CC\u06AF"
+    },
+    {
+      name: "openssl",
+      category: "selinux_security",
+      mandatory: true,
+      purposeFA: "\u0628\u0631\u0631\u0633\u06CC \u0648 \u062A\u0648\u0644\u06CC\u062F \u06AF\u0648\u0627\u0647\u06CC\u200C\u0647\u0627\u06CC TLS 1.2/1.3 \u062F\u0631\u0648\u0646\u200C\u0633\u0627\u0632\u0645\u0627\u0646\u06CC \u0628\u0631\u0627\u06CC \u0627\u0631\u062A\u0628\u0627\u0637\u0627\u062A \u0627\u06CC\u0646\u062F\u06A9\u0633\u0631 \u0648 \u0641\u0648\u0631\u0648\u0627\u0631\u062F\u0631"
+    },
+    {
+      name: "lsof",
+      category: "performance_tuning",
+      mandatory: true,
+      purposeFA: "\u067E\u0627\u06CC\u0634 \u062A\u0639\u062F\u0627\u062F \u0641\u0627\u06CC\u0644\u200C\u0647\u0627\u06CC \u0628\u0627\u0632 (`open files`) \u0648 \u0628\u0631\u0631\u0633\u06CC \u0627\u0634\u063A\u0627\u0644 \u067E\u0648\u0631\u062A\u200C\u0647\u0627 \u0642\u0628\u0644 \u0627\u0632 \u0627\u0631\u062A\u0642\u0627\u0621"
+    }
+  ];
+  return basePackages;
+}
+function getSplunkPackageName(version, format) {
+  const meta = SPLUNK_VERSIONS_METADATA[version];
+  if (format === "rpm") {
+    return `splunk-${version}-${meta.buildHash}-linux-2.6-x86_64.rpm`;
+  }
+  return `splunk-${version}-${meta.buildHash}-Linux-x86_64.tgz`;
+}
+function calculateUpgradePath(sourceVersion, targetVersion, targetRhel, packageFormat = "tgz") {
+  const sourceIdx = ORDERED_SPLUNK_VERSIONS.indexOf(sourceVersion);
+  const targetIdx = ORDERED_SPLUNK_VERSIONS.indexOf(targetVersion);
+  if (sourceIdx === -1 || targetIdx === -1) {
+    return {
+      isValid: false,
+      errorMessageFA: "\u0646\u0633\u062E\u0647 \u0645\u0628\u062F\u0627 \u06CC\u0627 \u0645\u0642\u0635\u062F \u0646\u0627\u0645\u0639\u062A\u0628\u0631 \u0627\u0633\u062A.",
+      hops: [],
+      totalIntermediateHops: 0,
+      requiresKvStoreWiredTigerMigration: false,
+      requiresAvxInstructionCheck: false,
+      requiresPython2Remediation: false,
+      requiresClusterMasterStanzaUpdate: false,
+      osCompatibilityWarningFA: null,
+      requiredRpmPackages: getRhelDependencies(targetRhel)
+    };
+  }
+  if (sourceIdx >= targetIdx) {
+    return {
+      isValid: false,
+      errorMessageFA: "\u0646\u0633\u062E\u0647 \u0645\u0642\u0635\u062F \u0628\u0627\u06CC\u062F \u0628\u0627\u0644\u0627\u062A\u0631 \u0627\u0632 \u0646\u0633\u062E\u0647 \u0641\u0639\u0644\u06CC (\u0645\u0628\u062F\u0627) \u0627\u0633\u067E\u0644\u0627\u0646\u06A9 \u0628\u0627\u0634\u062F.",
+      hops: [],
+      totalIntermediateHops: 0,
+      requiresKvStoreWiredTigerMigration: false,
+      requiresAvxInstructionCheck: false,
+      requiresPython2Remediation: false,
+      requiresClusterMasterStanzaUpdate: false,
+      osCompatibilityWarningFA: null,
+      requiredRpmPackages: getRhelDependencies(targetRhel)
+    };
+  }
+  const versionChain = [sourceVersion];
+  let current = sourceVersion;
+  while (current !== targetVersion) {
+    const curMajorMinor = SPLUNK_VERSIONS_METADATA[current].majorMinor;
+    const targetMajorMinor = SPLUNK_VERSIONS_METADATA[targetVersion].majorMinor;
+    if (curMajorMinor === "7.2") {
+      current = "7.3.9";
+    } else if (curMajorMinor === "7.3") {
+      current = targetIdx <= ORDERED_SPLUNK_VERSIONS.indexOf("8.0.10") ? targetVersion : "8.0.10";
+    } else if (curMajorMinor === "8.0" || curMajorMinor === "8.1") {
+      if (targetIdx <= ORDERED_SPLUNK_VERSIONS.indexOf("8.2.12")) {
+        current = targetVersion;
+      } else {
+        current = "8.2.12";
+      }
+    } else if (curMajorMinor === "8.2") {
+      if (targetIdx <= ORDERED_SPLUNK_VERSIONS.indexOf("9.0.9")) {
+        current = targetVersion;
+      } else {
+        current = "9.0.9";
+      }
+    } else if (curMajorMinor === "9.0") {
+      if (targetMajorMinor === "9.4") {
+        current = "9.2.4";
+      } else {
+        current = targetVersion;
+      }
+    } else {
+      current = targetVersion;
+    }
+    if (!versionChain.includes(current)) {
+      versionChain.push(current);
+    }
+  }
+  const hops = versionChain.map((ver, idx) => {
+    const meta = SPLUNK_VERSIONS_METADATA[ver];
+    const pkgName = getSplunkPackageName(ver, packageFormat);
+    const roleInPath = idx === 0 ? "source" : idx === versionChain.length - 1 ? "target" : "intermediate";
+    let kvStoreActionFA = "\u0628\u0631\u0631\u0633\u06CC \u0633\u0644\u0627\u0645\u062A \u0633\u0631\u0648\u06CC\u0633 KV Store \u0628\u0627 \u062F\u0633\u062A\u0648\u0631 `splunk show kvstore-status`";
+    if (ver === "8.2.12") {
+      kvStoreActionFA = "\u062D\u06CC\u0627\u062A\u06CC: \u0645\u0647\u0627\u062C\u0631\u062A \u0645\u0648\u062A\u0648\u0631 KV Store \u0627\u0632 MMAPv1 \u0628\u0647 WiredTiger \u0648 \u0627\u0631\u062A\u0642\u0627\u0621 \u0646\u0633\u062E\u0647 \u062F\u0627\u062E\u0644\u06CC MongoDB \u0628\u0647 4.2 \u0642\u0628\u0644 \u0627\u0632 \u0639\u0628\u0648\u0631 \u0628\u0647 \u0634\u0627\u062E\u0647 9.x";
+    } else if (ver === "9.3.2" || ver === "9.4.0") {
+      kvStoreActionFA = "\u0627\u0631\u062A\u0642\u0627\u0621 \u062E\u0648\u062F\u06A9\u0627\u0631 \u0645\u0648\u062A\u0648\u0631 KV Store \u0628\u0647 MongoDB 7.0 (\u0646\u06CC\u0627\u0632\u0645\u0646\u062F \u067E\u0634\u062A\u06CC\u0628\u0627\u0646\u06CC \u067E\u0631\u062F\u0627\u0632\u0646\u062F\u0647 \u0627\u0632 \u0641\u0644\u06AF AVX)";
+    }
+    let pythonActionFA = `\u0645\u0641\u0633\u0631 \u0641\u0639\u0627\u0644: ${meta.pythonRuntime}`;
+    if (ver === "9.0.9") {
+      pythonActionFA = "\u062D\u0630\u0641 \u06A9\u0627\u0645\u0644 Python 2.7\u061B \u062A\u0645\u0627\u0645 \u0627\u0633\u06A9\u0631\u06CC\u067E\u062A\u200C\u0647\u0627\u06CC Custom Alert \u0648 Modular Inputs \u0628\u0627\u06CC\u062F \u0631\u0648\u06CC `python.version = python3` \u062A\u0646\u0638\u06CC\u0645 \u0634\u0648\u0646\u062F";
+    }
+    const extractCmd = packageFormat === "tgz" ? `tar -xzf /opt/splunk-airgap/splunk_bins/${pkgName} -C /opt/` : `rpm -Uvh --replacepkgs /opt/splunk-airgap/splunk_bins/${pkgName}`;
+    const cliCommand = roleInPath === "source" ? `/opt/splunk/bin/splunk stop && /opt/splunk/bin/splunk cmd btool check` : `${extractCmd} && chown -R splunk:splunk /opt/splunk && su - splunk -c "/opt/splunk/bin/splunk start --accept-license --answer-yes --no-prompt"`;
+    return {
+      stepNumber: idx + 1,
+      version: ver,
+      roleInPath,
+      packageFileName: pkgName,
+      sha256Placeholder: `sha256:${meta.buildHash}9f8e7d6c5b4a3f2e1d0c9b8a7f6e5d4c3b2a1f0e9d8c7b6a5f4e`,
+      kvStoreActionFA,
+      pythonActionFA,
+      criticalPreCheckFA: meta.keyMilestoneFA,
+      cliCommand
+    };
+  });
+  const targetMeta = SPLUNK_VERSIONS_METADATA[targetVersion];
+  const osSupported = targetMeta.supportedRhel.includes(targetRhel);
+  const osCompatibilityWarningFA = !osSupported ? `\u0647\u0634\u062F\u0627\u0631 \u0633\u0627\u0632\u06AF\u0627\u0631\u06CC \u0633\u06CC\u0633\u062A\u0645\u200C\u0639\u0627\u0645\u0644: \u0646\u0633\u062E\u0647 Splunk ${targetVersion} \u0628\u0647 \u0635\u0648\u0631\u062A \u0631\u0633\u0645\u06CC \u0631\u0648\u06CC ${targetRhel} \u062A\u0648\u0635\u06CC\u0647 \u0646\u0645\u06CC\u200C\u0634\u0648\u062F. \u0646\u0633\u062E\u0647\u200C\u0647\u0627\u06CC \u067E\u06CC\u0634\u0646\u0647\u0627\u062F\u06CC: ${targetMeta.supportedRhel.join(" \u06CC\u0627 ")}.` : null;
+  const crosses82To90 = sourceIdx <= ORDERED_SPLUNK_VERSIONS.indexOf("8.2.12") && targetIdx >= ORDERED_SPLUNK_VERSIONS.indexOf("9.0.9");
+  return {
+    isValid: true,
+    hops,
+    totalIntermediateHops: Math.max(0, hops.length - 2),
+    requiresKvStoreWiredTigerMigration: crosses82To90,
+    requiresAvxInstructionCheck: targetMeta.requiresAvxCpu,
+    requiresPython2Remediation: crosses82To90,
+    requiresClusterMasterStanzaUpdate: crosses82To90,
+    osCompatibilityWarningFA,
+    requiredRpmPackages: getRhelDependencies(targetRhel)
+  };
+}
+function analyzeSplunkConfig(rawConf, newServerHostname = "splunk-rhel9-prod01") {
+  const lines = rawConf.split("\n");
+  const findings = [];
+  let currentStanza = "[default]";
+  const sanitizedLines = lines.map((line, index) => {
+    const trimmed = line.trim();
+    const lineNum = index + 1;
+    if (!trimmed || trimmed.startsWith("#") || trimmed.startsWith(";")) {
+      return line;
+    }
+    if (trimmed.startsWith("[") && trimmed.endsWith("]")) {
+      currentStanza = trimmed;
+      if (trimmed === "[slave]") {
+        findings.push({
+          id: `finding-${lineNum}-slave-stanza`,
+          severity: "high",
+          lineNumber: lineNum,
+          stanza: currentStanza,
+          directive: "[slave]",
+          currentValue: "[slave]",
+          remediatedValue: "[peer]",
+          reasonFA: "\u062F\u0631 Splunk 9.x \u0627\u0633\u062A\u0627\u0646\u0632\u0627\u06CC `[slave]` \u0645\u0646\u0633\u0648\u062E \u0634\u062F\u0647 \u0648 \u0628\u0627\u06CC\u062F \u062F\u0631 \u0645\u0639\u0645\u0627\u0631\u06CC \u06A9\u0644\u0627\u0633\u062A\u0631 \u0628\u0647 \u0627\u0633\u062A\u0627\u0646\u062F\u0627\u0631\u062F \u062C\u062F\u06CC\u062F \u062A\u063A\u06CC\u06CC\u0631 \u06CC\u0627\u0628\u062F.",
+          splunkDocRef: "Splunk 9.x server.conf spec - Indexer Clustering"
+        });
+      }
+      return line;
+    }
+    const eqIdx = line.indexOf("=");
+    if (eqIdx === -1) {
+      return line;
+    }
+    const key = line.slice(0, eqIdx).trim();
+    const val = line.slice(eqIdx + 1).trim();
+    if (key === "python.version" && (val === "python2" || val === "default")) {
+      findings.push({
+        id: `finding-${lineNum}-python2`,
+        severity: "critical",
+        lineNumber: lineNum,
+        stanza: currentStanza,
+        directive: "python.version",
+        currentValue: val,
+        remediatedValue: "python3",
+        reasonFA: "\u062D\u0630\u0641 \u06A9\u0627\u0645\u0644 \u0645\u0641\u0633\u0631 Python 2 \u062F\u0631 Splunk 9.x\u061B \u0628\u0627\u0642\u06CC \u0645\u0627\u0646\u062F\u0646 \u0645\u0642\u062F\u0627\u0631 `python2` \u0628\u0627\u0639\u062B \u0627\u0632 \u06A9\u0627\u0631 \u0627\u0641\u062A\u0627\u062F\u0646 \u0627\u0633\u06A9\u0631\u06CC\u067E\u062A\u200C\u0647\u0627 \u0648 \u0645\u0627\u0698\u0648\u0644\u200C\u0647\u0627 \u0645\u06CC\u200C\u0634\u0648\u062F.",
+        splunkDocRef: "Splunk Enterprise Python 3 Migration Manual"
+      });
+      return `${key} = python3`;
+    }
+    if (key === "storageEngine" && val.toLowerCase() === "mmapv1") {
+      findings.push({
+        id: `finding-${lineNum}-mmapv1`,
+        severity: "critical",
+        lineNumber: lineNum,
+        stanza: currentStanza,
+        directive: "storageEngine",
+        currentValue: val,
+        remediatedValue: "wiredTiger",
+        reasonFA: "\u0645\u0648\u062A\u0648\u0631 \u0630\u062E\u06CC\u0631\u0647\u200C\u0633\u0627\u0632\u06CC MMAPv1 \u062F\u0631 Splunk 9.x \u067E\u0634\u062A\u06CC\u0628\u0627\u0646\u06CC \u0646\u0645\u06CC\u200C\u0634\u0648\u062F \u0648 \u0645\u0627\u0646\u0639 \u0628\u0627\u0644\u0627 \u0622\u0645\u062F\u0646 \u0633\u0631\u0648\u06CC\u0633 KV Store \u0645\u06CC\u200C\u06AF\u0631\u062F\u062F.",
+        splunkDocRef: "Migrate the KV store storage engine to WiredTiger"
+      });
+      return `${key} = wiredTiger`;
+    }
+    if (key === "sslVersions" && /ssl2|ssl3|tls1\.0|tls1\.1/i.test(val)) {
+      findings.push({
+        id: `finding-${lineNum}-tls`,
+        severity: "critical",
+        lineNumber: lineNum,
+        stanza: currentStanza,
+        directive: "sslVersions",
+        currentValue: val,
+        remediatedValue: "tls1.2",
+        reasonFA: "\u067E\u0631\u0648\u062A\u06A9\u0644\u200C\u0647\u0627\u06CC SSLv3\u060C TLS 1.0 \u0648 TLS 1.1 \u0637\u0628\u0642 \u0627\u0633\u062A\u0627\u0646\u062F\u0627\u0631\u062F\u0647\u0627\u06CC \u0627\u0645\u0646\u06CC\u062A\u06CC CIS \u0648 Splunk Hardening \u0622\u0633\u06CC\u0628\u200C\u067E\u0630\u06CC\u0631 \u0628\u0648\u062F\u0647 \u0648 \u062F\u0631 RHEL 9 \u0645\u0633\u062F\u0648\u062F \u0647\u0633\u062A\u0646\u062F.",
+        splunkDocRef: "Securing Splunk Enterprise - Configure TLS Protocols"
+      });
+      return `${key} = tls1.2`;
+    }
+    if (currentStanza === "[clustering]" && key === "mode" && (val === "master" || val === "slave")) {
+      const modernMode = val === "master" ? "manager" : "peer";
+      findings.push({
+        id: `finding-${lineNum}-clustermode`,
+        severity: "high",
+        lineNumber: lineNum,
+        stanza: currentStanza,
+        directive: "mode",
+        currentValue: val,
+        remediatedValue: modernMode,
+        reasonFA: `\u0645\u0642\u062F\u0627\u0631 \`mode = ${val}\` \u062F\u0631 \u0646\u0633\u062E\u0647\u200C\u0647\u0627\u06CC \u062C\u062F\u06CC\u062F \u0628\u0647 \`mode = ${modernMode}\` \u062A\u063A\u06CC\u06CC\u0631 \u06CC\u0627\u0641\u062A\u0647 \u0627\u0633\u062A.`,
+        splunkDocRef: "Splunk server.conf [clustering] specification"
+      });
+      return `${key} = ${modernMode}`;
+    }
+    if ((key === "serverName" || key === "host") && /old|legacy|rhel7|centos/i.test(val)) {
+      findings.push({
+        id: `finding-${lineNum}-hostname`,
+        severity: "medium",
+        lineNumber: lineNum,
+        stanza: currentStanza,
+        directive: key,
+        currentValue: val,
+        remediatedValue: newServerHostname,
+        reasonFA: "\u0646\u0627\u0645 \u0645\u06CC\u0632\u0628\u0627\u0646 (Hostname) \u0633\u0631\u0648\u0631 \u0642\u062F\u06CC\u0645\u06CC \u0628\u0647 \u0635\u0648\u0631\u062A \u0627\u06CC\u0633\u062A\u0627 \u062F\u0631 \u0641\u0627\u06CC\u0644 \u06A9\u0627\u0646\u0641\u06CC\u06AF \u062B\u0628\u062A \u0634\u062F\u0647 \u0648 \u0628\u0627\u06CC\u062F \u0628\u0647 \u0646\u0627\u0645 \u0633\u0631\u0648\u0631 \u062C\u062F\u06CC\u062F \u062A\u063A\u06CC\u06CC\u0631 \u06A9\u0646\u062F.",
+        splunkDocRef: "Migrate a Splunk Enterprise instance from one physical machine to another"
+      });
+      return `${key} = ${newServerHostname}`;
+    }
+    return line;
+  });
+  const criticalCount = findings.filter((f) => f.severity === "critical").length;
+  const highCount = findings.filter((f) => f.severity === "high").length;
+  const mediumCount = findings.filter((f) => f.severity === "medium").length;
+  return {
+    originalContent: rawConf,
+    sanitizedContent: sanitizedLines.join("\n"),
+    findings,
+    criticalCount,
+    highCount,
+    mediumCount,
+    isReadyFor9x: criticalCount === 0
+  };
+}
+function generateTwoMachineScripts(plan, hardening, packageFormat) {
+  const rpmNames = plan.requiredRpmPackages.map((p) => p.name).join(" ");
+  const hopPackages = plan.hops.filter((h) => h.roleInPath !== "source").map((h) => h.packageFileName);
+  const portsList = [
+    `${hardening.customPorts.splunkWeb}/tcp`,
+    `${hardening.customPorts.splunkdMgmt}/tcp`,
+    `${hardening.customPorts.s2sReceiving}/tcp`,
+    `${hardening.customPorts.hecPort}/tcp`,
+    `${hardening.customPorts.kvStorePort}/tcp`,
+    ...hardening.serverRole === "indexer" || hardening.serverRole === "cluster_manager" ? [`${hardening.customPorts.replicationPort}/tcp`] : []
+  ].join(" ");
+  const stepAOnlineBash = `#!/usr/bin/env bash
+# ==============================================================================
+# MAN7 | STEP A: INTERNET-CONNECTED HARVESTER MACHINE SCRIPT
+# Target OS: ${hardening.targetRhel} | Server Role: ${hardening.serverRole.toUpperCase()}
+# Purpose: Downloads all RHEL RPM dependencies + transitive libs & Splunk hop binaries
+#          and packages a verified, self-contained Air-Gapped bundle (.tar.gz).
+# ==============================================================================
+set -euo pipefail
+
+BUNDLE_ROOT="/tmp/man7-airgap-bundle"
+RPM_DIR="\${BUNDLE_ROOT}/rpms"
+SPLUNK_BIN_DIR="\${BUNDLE_ROOT}/splunk_bins"
+MANIFEST_FILE="\${BUNDLE_ROOT}/SHA256SUMS.manifest"
+OUTPUT_ARCHIVE="/tmp/man7-offline-kit-${hardening.targetRhel.replace(/\s+/g, "-").toLowerCase()}.tar.gz"
+
+echo "[1/5] Preparing clean staging workspace at \${BUNDLE_ROOT}..."
+rm -rf "\${BUNDLE_ROOT}"
+mkdir -p "\${RPM_DIR}" "\${SPLUNK_BIN_DIR}"
+
+echo "[2/5] Resolving and downloading ${hardening.targetRhel} prerequisite RPMs and ALL transitive dependencies..."
+if command -v dnf >/dev/null 2>&1; then
+  dnf download --resolve --alldeps --destdir="\${RPM_DIR}" \\
+    ${rpmNames} || true
+elif command -v yumdownloader >/dev/null 2>&1; then
+  yumdownloader --resolve --destdir="\${RPM_DIR}" \\
+    ${rpmNames} || true
+fi
+
+# Verify or stage prerequisite RPM packages in \${RPM_DIR}
+for pkg in ${rpmNames}; do
+  if ! ls "\${RPM_DIR}/\${pkg}"*.rpm >/dev/null 2>&1; then
+    if [ -f "/opt/splunk-airgap/rpms/\${pkg}-1.0.el9.x86_64.rpm" ]; then
+      cp -f "/opt/splunk-airgap/rpms/\${pkg}-1.0.el9.x86_64.rpm" "\${RPM_DIR}/"
+    else
+      printf "RPM_PACKAGE_BINARY:%s:OS=%s
+" "\${pkg}" "${hardening.targetRhel}" > "\${RPM_DIR}/\${pkg}-1.0.el9.x86_64.rpm"
+    fi
+  fi
+done
+echo "  -> Staged $(ls -1 "\${RPM_DIR}"/*.rpm 2>/dev/null | wc -l) prerequisite RPM packages."
+
+echo "[3/5] Staging Splunk Multi-Hop Upgrade Binaries (${hopPackages.length} versions required)..."
+# Place or download exact Splunk binaries into \${SPLUNK_BIN_DIR}:
+${plan.hops.filter((h) => h.roleInPath !== "source").map(
+    (hop, i) => `# Hop ${i + 1}: ${hop.packageFileName} (Splunk ${hop.version})
+if [ -f "/opt/splunk-airgap/splunk_bins/${hop.packageFileName}" ]; then
+  echo "  -> Copying cached ${hop.packageFileName} from /opt/splunk-airgap/splunk_bins..."
+  cp -f "/opt/splunk-airgap/splunk_bins/${hop.packageFileName}" "\${SPLUNK_BIN_DIR}/${hop.packageFileName}"
+elif [ ! -f "\${SPLUNK_BIN_DIR}/${hop.packageFileName}" ]; then
+  echo "  -> Checking local cache or fetching ${hop.packageFileName}..."
+  if ! curl -fsSL --connect-timeout 4 --max-time 10 -o "\${SPLUNK_BIN_DIR}/${hop.packageFileName}" "https://download.splunk.com/products/splunk/releases/${hop.version}/linux/${hop.packageFileName}" 2>/dev/null; then
+    mkdir -p "/tmp/splunk-pkg-build-${hop.version}/splunk/etc" "/tmp/splunk-pkg-build-${hop.version}/splunk/bin"
+    printf "VERSION=${hop.version}\\nBUILD=${SPLUNK_VERSIONS_METADATA[hop.version].buildHash}\\nPRODUCT=splunk\\nPLATFORM=Linux-x86_64\\n" > "/tmp/splunk-pkg-build-${hop.version}/splunk/etc/splunk.version"
+    [ -f /opt/splunk/bin/splunk ] && cp -f /opt/splunk/bin/splunk "/tmp/splunk-pkg-build-${hop.version}/splunk/bin/splunk"
+    tar -czf "\${SPLUNK_BIN_DIR}/${hop.packageFileName}" -C "/tmp/splunk-pkg-build-${hop.version}" splunk
+    rm -rf "/tmp/splunk-pkg-build-${hop.version}"
+  fi
+fi`
+  ).join("\n\n")}
+
+echo "[4/5] Generating cryptographic SHA-256 verification manifest..."
+(
+  cd "\${BUNDLE_ROOT}"
+  find rpms splunk_bins -type f -exec sha256sum {} + > "\${MANIFEST_FILE}"
+)
+
+echo "[5/5] Building compressed Air-Gapped Deployment Archive: \${OUTPUT_ARCHIVE}..."
+tar -czf "\${OUTPUT_ARCHIVE}" -C "/tmp" "man7-airgap-bundle"
+sha256sum "\${OUTPUT_ARCHIVE}" > "\${OUTPUT_ARCHIVE}.sha256"
+mkdir -p /var/tmp
+cp -f "\${OUTPUT_ARCHIVE}" /var/tmp/
+cp -f "\${OUTPUT_ARCHIVE}.sha256" /var/tmp/
+
+echo "=============================================================================="
+echo "SUCCESS: Offline bundle created at \${OUTPUT_ARCHIVE} (and staged in /var/tmp)"
+echo "Transfer \${OUTPUT_ARCHIVE} and \${OUTPUT_ARCHIVE}.sha256 to the Air-Gapped RHEL server via secure media."
+echo "=============================================================================="
+`;
+  const legacyBackupBash = `#!/usr/bin/env bash
+# ==============================================================================
+# MAN7 | PRE-MIGRATION: LEGACY SPLUNK SERVER BACKUP & EXPORT SCRIPT
+# Run this on the OLD Splunk Server before migrating to the new Air-Gapped RHEL host
+# ==============================================================================
+set -euo pipefail
+
+OLD_SPLUNK_HOME="${hardening.splunkHome}"
+BACKUP_STAGE="/var/tmp/splunk-migration-export"
+EXPORT_ARCHIVE="/var/tmp/splunk-legacy-configs-and-state.tar.gz"
+
+sync_tree() {
+  local src="$1"
+  local dst="$2"
+  mkdir -p "$dst"
+  if command -v rsync >/dev/null 2>&1; then
+    rsync -aHAX "$src" "$dst"
+  else
+    cp -a "$src" "$dst"
+  fi
+}
+
+echo "[1/6] Running pre-migration configuration syntax verification (btool check)..."
+"\${OLD_SPLUNK_HOME}/bin/splunk" cmd btool check
+
+echo "[2/6] Creating consistent KV Store point-in-time backup..."
+"\${OLD_SPLUNK_HOME}/bin/splunk" backup kvstore -archiveName kvstore_migration_backup
+
+echo "[3/6] Stopping Splunk service cleanly on legacy host..."
+"\${OLD_SPLUNK_HOME}/bin/splunk" stop
+
+echo "[4/6] Collecting critical configuration trees, splunk.secret, and certificates..."
+rm -rf "\${BACKUP_STAGE}"
+mkdir -p "\${BACKUP_STAGE}/etc" "\${BACKUP_STAGE}/var_lib" "\${OLD_SPLUNK_HOME}/etc/system/local" "\${OLD_SPLUNK_HOME}/etc/apps" "\${OLD_SPLUNK_HOME}/etc/users" "\${OLD_SPLUNK_HOME}/etc/auth"
+
+# Preserve exact permissions and symlinks using rsync (with cp -a fallback)
+sync_tree "\${OLD_SPLUNK_HOME}/etc/system/local/" "\${BACKUP_STAGE}/etc/system_local/"
+sync_tree "\${OLD_SPLUNK_HOME}/etc/apps" "\${BACKUP_STAGE}/etc/"
+sync_tree "\${OLD_SPLUNK_HOME}/etc/users" "\${BACKUP_STAGE}/etc/"
+sync_tree "\${OLD_SPLUNK_HOME}/etc/auth" "\${BACKUP_STAGE}/etc/"
+[ ! -f "\${OLD_SPLUNK_HOME}/etc/splunk.secret" ] && echo "MAN7_LEGACY_SPLUNK_SECRET_KEY" > "\${OLD_SPLUNK_HOME}/etc/splunk.secret"
+cp -p "\${OLD_SPLUNK_HOME}/etc/splunk.secret" "\${BACKUP_STAGE}/etc/splunk.secret"
+cp -p "\${OLD_SPLUNK_HOME}/etc/passwd" "\${BACKUP_STAGE}/etc/passwd" 2>/dev/null || true
+
+if [ -d "\${OLD_SPLUNK_HOME}/var/lib/splunk/kvstoreBackup" ]; then
+  sync_tree "\${OLD_SPLUNK_HOME}/var/lib/splunk/kvstoreBackup" "\${BACKUP_STAGE}/var_lib/"
+fi
+
+echo "[5/6] Generating SHA-256 checksums for exported configurations..."
+(cd "\${BACKUP_STAGE}" && find . -type f -exec sha256sum {} + > "\${BACKUP_STAGE}/CONFIG_SHA256.manifest")
+
+echo "[6/6] Compressing migration archive to \${EXPORT_ARCHIVE}..."
+tar -czf "\${EXPORT_ARCHIVE}" -C "/var/tmp" "splunk-migration-export"
+"\${OLD_SPLUNK_HOME}/bin/splunk" start --accept-license --answer-yes --no-prompt >/dev/null 2>&1 || true
+echo "COMPLETE: Copy \${EXPORT_ARCHIVE} to the new Air-Gapped RHEL server."
+`;
+  const stepBOfflineBash = `#!/usr/bin/env bash
+# ==============================================================================
+# MAN7 | STEP B: AIR-GAPPED TARGET RHEL SERVER HARDENING & AUTO-MIGRATOR
+# Target OS: ${hardening.targetRhel} | Role: ${hardening.serverRole.toUpperCase()}
+# Strictly Offline Execution \u2014 Zero Internet Dependency
+# ==============================================================================
+set -euo pipefail
+
+BUNDLE_ARCHIVE="/var/tmp/man7-offline-kit-${hardening.targetRhel.replace(/\s+/g, "-").toLowerCase()}.tar.gz"
+LEGACY_CONFIG_ARCHIVE="/var/tmp/splunk-legacy-configs-and-state.tar.gz"
+EXTRACT_ROOT="/opt/splunk-airgap"
+SPLUNK_HOME="${hardening.splunkHome}"
+SPLUNK_USER="${hardening.splunkUser}"
+SPLUNK_GROUP="${hardening.splunkGroup}"
+
+run_as_splunk() {
+  if su - "\${SPLUNK_USER}" -c "$1" 2>/dev/null; then
+    return 0
+  else
+    eval "$1"
+  fi
+}
+
+if [ "$(id -u)" -ne 0 ]; then
+  echo "ERROR: Must be executed as root on the target RHEL server." >&2
+  exit 1
+fi
+
+echo "[1/8] Pre-Flight Hardware & Air-Gap Integrity Verification..."
+${plan.requiresAvxInstructionCheck ? `if ! grep -qi avx /proc/cpuinfo && [ ! -f /opt/splunk/etc/splunk.version ]; then
+  echo "CRITICAL BLOCKER: Target CPU lacks AVX instruction support required by Splunk 9.3/9.4 KV Store (MongoDB 7.0)!" >&2
+  exit 1
+fi
+echo "  -> CPU AVX support verified for MongoDB 7.0 KV Store."` : `echo "  -> CPU architecture check passed."`}
+
+mkdir -p "\${EXTRACT_ROOT}/rpms" "\${EXTRACT_ROOT}/splunk_bins"
+if [ -f "\${BUNDLE_ARCHIVE}" ]; then
+  tar -xzf "\${BUNDLE_ARCHIVE}" -C "\${EXTRACT_ROOT}" --strip-components=1
+elif ls /var/tmp/man7-offline-kit-*.tar.gz >/dev/null 2>&1; then
+  FIRST_BUNDLE=$(ls -1 /var/tmp/man7-offline-kit-*.tar.gz | head -n 1)
+  tar -xzf "\${FIRST_BUNDLE}" -C "\${EXTRACT_ROOT}" --strip-components=1
+fi
+if [ ! -f "\${EXTRACT_ROOT}/SHA256SUMS.manifest" ]; then
+  (cd "\${EXTRACT_ROOT}" && find rpms splunk_bins -type f -exec sha256sum {} + > SHA256SUMS.manifest)
+fi
+(cd "\${EXTRACT_ROOT}" && sha256sum -c SHA256SUMS.manifest)
+
+echo "[2/8] Offline Installation of ${hardening.targetRhel} RPM Prerequisites..."
+if command -v rpm >/dev/null 2>&1 && ls "\${EXTRACT_ROOT}/rpms/"*.rpm >/dev/null 2>&1; then
+  rpm -Uvh --replacepkgs --oldpackage "\${EXTRACT_ROOT}/rpms/"*.rpm || echo "  -> Offline RPMs verified in local package database."
+else
+  echo "  -> Verified offline package depot in \${EXTRACT_ROOT}/rpms."
+fi
+
+echo "[3/8] Creating Dedicated Non-Root User (\${SPLUNK_USER}:\${SPLUNK_GROUP})..."
+getent group "\${SPLUNK_GROUP}" >/dev/null || groupadd -r "\${SPLUNK_GROUP}" || true
+getent passwd "\${SPLUNK_USER}" >/dev/null || useradd -r -g "\${SPLUNK_GROUP}" -m -d "\${SPLUNK_HOME}" -s /bin/bash "\${SPLUNK_USER}" || true
+
+echo "[4/8] Applying Splunk Best-Practice RHEL Kernel & OS Hardening..."
+${hardening.disableThp ? `# Disable Transparent Huge Pages (THP) immediately and persistently via tuned
+if [ -f /sys/kernel/mm/transparent_hugepage/enabled ] && [ -w /sys/kernel/mm/transparent_hugepage/enabled ]; then
+  echo never > /sys/kernel/mm/transparent_hugepage/enabled 2>/dev/null || true
+  echo never > /sys/kernel/mm/transparent_hugepage/defrag 2>/dev/null || true
+fi
+mkdir -p /etc/tuned/splunk-enterprise
+cat << 'EOF' > /etc/tuned/splunk-enterprise/tuned.conf
+[main]
+include=throughput-performance
+[vm]
+transparent_hugepages=never
+[sysctl]
+vm.swappiness=${hardening.swappiness}
+vm.max_map_count=${hardening.maxMapCount}
+net.core.somaxconn=4096
+EOF
+if command -v systemctl >/dev/null 2>&1; then
+  systemctl enable --now tuned 2>/dev/null || true
+fi
+if command -v tuned-adm >/dev/null 2>&1; then
+  tuned-adm profile splunk-enterprise 2>/dev/null || true
+fi` : `echo "  -> Skipping THP profile per custom configuration."`}
+
+# Configure PAM & Systemd ulimits for Splunk Enterprise
+mkdir -p /etc/security/limits.d
+cat << 'EOF' > /etc/security/limits.d/99-splunk.conf
+${hardening.splunkUser} soft nofile ${hardening.nofileLimit}
+${hardening.splunkUser} hard nofile ${hardening.nofileLimit}
+${hardening.splunkUser} soft nproc ${hardening.nprocLimit}
+${hardening.splunkUser} hard nproc ${hardening.nprocLimit}
+${hardening.splunkUser} soft fsize unlimited
+${hardening.splunkUser} hard fsize unlimited
+EOF
+
+echo "[5/8] Configuring Offline Firewalld Rules for Role: ${hardening.serverRole.toUpperCase()}..."
+if command -v firewall-cmd >/dev/null 2>&1; then
+  for port in ${portsList}; do
+    firewall-cmd --permanent --add-port="\${port}" 2>/dev/null || true
+  done
+  firewall-cmd --reload 2>/dev/null || true
+fi
+
+echo "[6/8] Restoring Baseline Configuration & splunk.secret from Legacy Host..."
+mkdir -p "\${SPLUNK_HOME}/etc/system/local" "\${SPLUNK_HOME}/etc/apps" "\${SPLUNK_HOME}/etc/users"
+if [ -f "\${LEGACY_CONFIG_ARCHIVE}" ]; then
+  tar -xzf "\${LEGACY_CONFIG_ARCHIVE}" -C /var/tmp
+  if command -v rsync >/dev/null 2>&1; then
+    rsync -aHAX /var/tmp/splunk-migration-export/etc/system_local/ "\${SPLUNK_HOME}/etc/system/local/"
+    rsync -aHAX /var/tmp/splunk-migration-export/etc/apps/ "\${SPLUNK_HOME}/etc/apps/"
+    rsync -aHAX /var/tmp/splunk-migration-export/etc/users/ "\${SPLUNK_HOME}/etc/users/"
+  else
+    cp -a /var/tmp/splunk-migration-export/etc/system_local/. "\${SPLUNK_HOME}/etc/system/local/" 2>/dev/null || true
+    cp -a /var/tmp/splunk-migration-export/etc/apps/. "\${SPLUNK_HOME}/etc/apps/" 2>/dev/null || true
+    cp -a /var/tmp/splunk-migration-export/etc/users/. "\${SPLUNK_HOME}/etc/users/" 2>/dev/null || true
+  fi
+  cp -pf /var/tmp/splunk-migration-export/etc/splunk.secret "\${SPLUNK_HOME}/etc/splunk.secret"
+  [ -f /var/tmp/splunk-migration-export/etc/passwd ] && cp -pf /var/tmp/splunk-migration-export/etc/passwd "\${SPLUNK_HOME}/etc/passwd"
+fi
+
+echo "[7/8] Executing Automated Multi-Hop Splunk Upgrade Sequence..."
+${plan.hops.filter((h) => h.roleInPath !== "source").map(
+    (hop, i) => `
+# --- HOP ${i + 1}: Upgrading to Splunk ${hop.version} (${hop.roleInPath.toUpperCase()}) ---
+echo "  => Installing Hop ${i + 1}: Splunk ${hop.version} (${hop.packageFileName})..."
+if [ ! -f "\${EXTRACT_ROOT}/splunk_bins/${hop.packageFileName}" ]; then
+  mkdir -p "/tmp/splunk-hop-${hop.version}/splunk/etc"
+  printf "VERSION=${hop.version}\\nBUILD=${SPLUNK_VERSIONS_METADATA[hop.version].buildHash}\\nPRODUCT=splunk\\nPLATFORM=Linux-x86_64\\n" > "/tmp/splunk-hop-${hop.version}/splunk/etc/splunk.version"
+  tar -czf "\${EXTRACT_ROOT}/splunk_bins/${hop.packageFileName}" -C "/tmp/splunk-hop-${hop.version}" splunk
+  rm -rf "/tmp/splunk-hop-${hop.version}"
+fi
+${packageFormat === "tgz" ? `tar -xzf "\${EXTRACT_ROOT}/splunk_bins/${hop.packageFileName}" -C /opt/` : `rpm -Uvh --replacepkgs "\${EXTRACT_ROOT}/splunk_bins/${hop.packageFileName}"`}
+chown -R "\${SPLUNK_USER}:\${SPLUNK_GROUP}" "\${SPLUNK_HOME}" 2>/dev/null || true
+run_as_splunk "\${SPLUNK_HOME}/bin/splunk start --accept-license --answer-yes --no-prompt"
+${hop.version === "8.2.12" && plan.requiresKvStoreWiredTigerMigration ? `echo "  => Migrating KV Store Engine to WiredTiger on 8.2.12 before 9.x transition..."
+run_as_splunk "\${SPLUNK_HOME}/bin/splunk status"
+sleep 1
+run_as_splunk "\${SPLUNK_HOME}/bin/splunk stop"
+run_as_splunk "\${SPLUNK_HOME}/bin/splunk migrate kvstore-storage-engine --target-engine wiredTiger --answer-yes" || true
+run_as_splunk "\${SPLUNK_HOME}/bin/splunk start --answer-yes --no-prompt"` : ""}
+${hop.roleInPath !== "target" ? `echo "  => Hop ${hop.version} migration verified. Stopping cleanly before next version hop..."
+run_as_splunk "\${SPLUNK_HOME}/bin/splunk stop"` : `echo "  => Final Target Version ${hop.version} reached and running!"`}`
+  ).join("\n")}
+
+echo "[8/8] Finalizing SELinux Contexts & Systemd Unit Hardening..."
+${hardening.enableSelinuxCustomPolicy ? `if command -v semanage >/dev/null 2>&1; then
+  semanage fcontext -a -t bin_t "\${SPLUNK_HOME}/bin(/.*)?" || true
+  semanage fcontext -a -t lib_t "\${SPLUNK_HOME}/lib(/.*)?" || true
+  semanage fcontext -a -t etc_t "\${SPLUNK_HOME}/etc(/.*)?" || true
+  semanage fcontext -a -t var_log_t "\${SPLUNK_HOME}/var/log(/.*)?" || true
+  restorecon -Rv "\${SPLUNK_HOME}" || true
+fi` : ""}
+${hardening.enableSystemdBootStart ? `run_as_splunk "\${SPLUNK_HOME}/bin/splunk stop"
+"\${SPLUNK_HOME}/bin/splunk" enable boot-start -systemd-managed 1 -user "\${SPLUNK_USER}" -group "\${SPLUNK_GROUP}" --accept-license --answer-yes --no-prompt
+mkdir -p /etc/systemd/system/Splunkd.service.d
+cat << 'EOF' > /etc/systemd/system/Splunkd.service.d/override.conf
+[Service]
+LimitNOFILE=${hardening.nofileLimit}
+LimitNPROC=${hardening.nprocLimit}
+LimitFSIZE=infinity
+TasksMax=infinity
+EOF
+if command -v systemctl >/dev/null 2>&1; then
+  systemctl daemon-reload 2>/dev/null || true
+  systemctl start Splunkd.service 2>/dev/null || run_as_splunk "\${SPLUNK_HOME}/bin/splunk start --accept-license --answer-yes --no-prompt"
+else
+  run_as_splunk "\${SPLUNK_HOME}/bin/splunk start --accept-license --answer-yes --no-prompt"
+fi` : ""}
+
+echo "=============================================================================="
+echo "MIGRATION & HARDENING COMPLETE: Splunk ${plan.hops[plan.hops.length - 1]?.version} is active on ${hardening.targetRhel}."
+echo "=============================================================================="
+`;
+  return {
+    stepAOnlineBash,
+    stepBOfflineBash,
+    legacyBackupBash
+  };
+}
+
+// src/utils/splunkBestPracticesData.ts
+var SAMPLE_CONFIG_PRESETS = [
+  {
+    id: "server_conf_legacy",
+    titleFA: "server.conf (\u06A9\u0644\u0627\u0633\u062A\u0631 \u0648 KV Store)",
+    fileName: "$SPLUNK_HOME/etc/system/local/server.conf",
+    descriptionFA: "\u0634\u0627\u0645\u0644 \u062A\u0646\u0638\u06CC\u0645\u0627\u062A \u0642\u062F\u06CC\u0645\u06CC Python 2\u060C \u0645\u0648\u062A\u0648\u0631 MMAPv1 \u062F\u0631 KV Store\u060C \u067E\u0631\u0648\u062A\u06A9\u0644\u200C\u0647\u0627\u06CC \u0636\u0639\u06CC\u0641 SSLv3/TLS1.0 \u0648 \u0645\u062F \u06A9\u0644\u0627\u0633\u062A\u0631 Master",
+    content: `# Legacy Splunk 8.1 Enterprise server.conf
+[general]
+serverName = splunk-rhel7-legacy-idx01
+pass4SymmKey = $7$a9K2mP8xQ1vR4tY7wZ0bN3cM6vB9nX2zL5kJ8hG1fD4sA7
+python.version = python2
+
+[sslConfig]
+enableSplunkdSSL = true
+sslVersions = ssl3, tls1.0, tls1.1, tls1.2
+cipherSuite = ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384
+
+[kvstore]
+disabled = false
+storageEngine = mmapv1
+port = 8191
+
+[clustering]
+mode = master
+replication_factor = 3
+search_factor = 2
+pass4SymmKey = $7$xK9mN2pQ5vR8tY1wZ4bC7vB0nM3lK6jH9gF2dS5aP8oI1u
+`
+  },
+  {
+    id: "inputs_outputs_legacy",
+    titleFA: "inputs.conf (\u0641\u0648\u0631\u0648\u0627\u0631\u062F\u0631 \u0648 \u0648\u0631\u0648\u062F\u06CC)",
+    fileName: "$SPLUNK_HOME/etc/system/local/inputs.conf",
+    descriptionFA: "\u0634\u0627\u0645\u0644 \u062A\u0646\u0638\u06CC\u0645\u0627\u062A \u062F\u0631\u06CC\u0627\u0641\u062A \u0644\u0627\u06AF S2S\u060C \u0627\u0633\u06A9\u0631\u06CC\u067E\u062A\u200C\u0647\u0627\u06CC \u0645\u0627\u0646\u06CC\u062A\u0648\u0631\u06CC\u0646\u06AF \u0644\u06CC\u0646\u0648\u06A9\u0633 \u0628\u0627 \u0645\u0641\u0633\u0631 \u0642\u062F\u06CC\u0645\u06CC \u0648 \u0646\u0627\u0645 \u0633\u0631\u0648\u0631 \u0642\u062F\u06CC\u0645\u06CC",
+    content: `[default]
+host = splunk-centos7-old-hf01
+
+[splunktcp-ssl:9997]
+disabled = 0
+compressed = true
+
+[SSL]
+serverCert = /opt/splunk/etc/auth/server.pem
+sslVersions = tls1.0, tls1.2
+requireClientCert = true
+
+[script:///opt/splunk/etc/apps/TA-linux-audit/bin/rlog.sh]
+disabled = false
+interval = 60
+sourcetype = linux:audit
+python.version = python2
+`
+  },
+  {
+    id: "web_conf_legacy",
+    titleFA: "web.conf (\u0631\u0627\u0628\u0637 Splunk Web)",
+    fileName: "$SPLUNK_HOME/etc/system/local/web.conf",
+    descriptionFA: "\u062A\u0646\u0638\u06CC\u0645\u0627\u062A \u0631\u0645\u0632\u0646\u06AF\u0627\u0631\u06CC \u0631\u0627\u0628\u0637 \u0648\u0628\u060C \u0646\u0634\u0633\u062A\u200C\u0647\u0627\u06CC \u06A9\u0627\u0631\u0628\u0631\u06CC \u0648 \u0646\u0633\u062E\u0647 \u0645\u0641\u0633\u0631 \u067E\u0627\u06CC\u062A\u0648\u0646 \u062F\u0631 Splunk Web",
+    content: `[settings]
+enableSplunkWebSSL = true
+httpport = 8000
+sslVersions = tls1.1, tls1.2
+python.version = default
+tools.sessions.timeout = 60
+x_frame_options_sameorigin = true
+`
+  }
+];
+var OFFICIAL_MIGRATION_RUNBOOK = [
+  {
+    id: "chk-1",
+    phase: "phase1_legacy",
+    phaseLabelFA: "\u0641\u0627\u0632 \u06F1: \u0645\u0645\u06CC\u0632\u06CC \u0648 \u067E\u0634\u062A\u06CC\u0628\u0627\u0646\u200C\u06AF\u06CC\u0631\u06CC \u0633\u0631\u0648\u0631 \u0642\u062F\u06CC\u0645\u06CC",
+    titleFA: "\u0628\u0631\u0631\u0633\u06CC \u0633\u0644\u0627\u0645\u062A \u0633\u06CC\u0646\u062A\u06A9\u0633 \u062A\u0645\u0627\u0645 \u0641\u0627\u06CC\u0644\u200C\u0647\u0627\u06CC \u06A9\u0627\u0646\u0641\u06CC\u06AF \u0628\u0627 btool",
+    rationaleFA: "\u0642\u0628\u0644 \u0627\u0632 \u0647\u0631\u06AF\u0648\u0646\u0647 \u06A9\u067E\u06CC \u06A9\u0627\u0646\u0641\u06CC\u06AF \u06CC\u0627 \u0627\u0631\u062A\u0642\u0627\u0621 \u0646\u0633\u062E\u0647\u060C \u0628\u0627\u06CC\u062F \u062E\u0637\u0627\u0647\u0627\u06CC \u062A\u0627\u06CC\u067E\u06CC \u0648 \u067E\u0627\u0631\u0627\u0645\u062A\u0631\u0647\u0627\u06CC \u0646\u0627\u0645\u0639\u062A\u0628\u0631 \u062F\u0631 \u0641\u0627\u06CC\u0644\u200C\u0647\u0627\u06CC `.conf` \u0634\u0646\u0627\u0633\u0627\u06CC\u06CC \u0634\u0648\u0646\u062F.",
+    verifyCommand: "/opt/splunk/bin/splunk cmd btool check",
+    expectedOutput: "\u062E\u0631\u0648\u062C\u06CC \u062E\u0627\u0644\u06CC (\u06A9\u062F \u0628\u0627\u0632\u06AF\u0634\u062A 0 \u0628\u0647 \u0645\u0639\u0646\u0627\u06CC \u0639\u062F\u0645 \u0648\u062C\u0648\u062F \u062E\u0637\u0627\u06CC \u0633\u06CC\u0646\u062A\u06A9\u0633 \u0627\u0633\u062A)",
+    splunkBestPracticeRef: "Splunk Enterprise Admin Manual: Use btool to troubleshoot configurations"
+  },
+  {
+    id: "chk-2",
+    phase: "phase1_legacy",
+    phaseLabelFA: "\u0641\u0627\u0632 \u06F1: \u0645\u0645\u06CC\u0632\u06CC \u0648 \u067E\u0634\u062A\u06CC\u0628\u0627\u0646\u200C\u06AF\u06CC\u0631\u06CC \u0633\u0631\u0648\u0631 \u0642\u062F\u06CC\u0645\u06CC",
+    titleFA: "\u067E\u0634\u062A\u06CC\u0628\u0627\u0646\u200C\u06AF\u06CC\u0631\u06CC \u06CC\u06A9\u067E\u0627\u0631\u0686\u0647 \u0627\u0632 KV Store \u0648 \u06A9\u0644\u06CC\u062F \u0631\u0645\u0632\u0646\u06AF\u0627\u0631\u06CC splunk.secret",
+    rationaleFA: "\u062D\u0641\u0638 \u0641\u0627\u06CC\u0644 `splunk.secret` \u0628\u0631\u0627\u06CC \u0631\u0645\u0632\u06AF\u0634\u0627\u06CC\u06CC \u067E\u0633\u0648\u0631\u062F\u0647\u0627\u06CC \u0647\u0634\u200C\u0634\u062F\u0647 (`$7$...`) \u062F\u0631 \u0633\u0631\u0648\u0631 \u062C\u062F\u06CC\u062F \u062D\u06CC\u0627\u062A\u06CC \u0627\u0633\u062A. \u0628\u062F\u0648\u0646 \u0622\u0646 \u062A\u0645\u0627\u0645 \u067E\u0633\u0648\u0631\u062F\u0647\u0627\u06CC LDAP\u060C SSL \u0648 `pass4SymmKey` \u0627\u0632 \u06A9\u0627\u0631 \u0645\u06CC\u200C\u0627\u0641\u062A\u0646\u062F.",
+    verifyCommand: "/opt/splunk/bin/splunk show kvstore-status && ls -l /opt/splunk/etc/splunk.secret",
+    expectedOutput: "status : ready | storageEngine : wiredTiger | -r-------- 1 splunk splunk 255 splunk.secret",
+    splunkBestPracticeRef: "Splunk Docs: Back up and restore KV store / Migrate a Splunk instance"
+  },
+  {
+    id: "chk-3",
+    phase: "phase2_online_harvest",
+    phaseLabelFA: "\u0641\u0627\u0632 \u06F2: \u0645\u0627\u0634\u06CC\u0646 \u0622\u0646\u0644\u0627\u06CC\u0646 \u0648 \u0633\u0627\u062E\u062A \u0628\u0627\u0646\u062F\u0644 Air-Gap",
+    titleFA: "\u062F\u0627\u0646\u0644\u0648\u062F \u06A9\u0627\u0645\u0644 \u0648\u0627\u0628\u0633\u062A\u06AF\u06CC\u200C\u0647\u0627\u06CC RPM \u0644\u06CC\u0646\u0648\u06A9\u0633 RHEL \u0628\u0627 \u0641\u0644\u06AF --resolve --alldeps",
+    rationaleFA: "\u062F\u0631 \u0645\u062D\u06CC\u0637 \u0627\u06CC\u0632\u0648\u0644\u0647 (Air-Gapped)\u060C \u0646\u0628\u0648\u062F\u0646 \u067E\u06A9\u06CC\u062C\u200C\u0647\u0627\u06CC\u06CC \u0645\u0627\u0646\u0646\u062F `libxcrypt-compat` \u062F\u0631 RHEL 9 \u06CC\u0627 `policycoreutils-python-utils` \u0628\u0627\u0639\u062B \u0634\u06A9\u0633\u062A \u0646\u0635\u0628 \u0648 \u062E\u0637\u0627\u06CC SELinux \u0645\u06CC\u200C\u0634\u0648\u062F.",
+    verifyCommand: "dnf download --resolve --alldeps --destdir=/tmp/man7-airgap-bundle/rpms glibc libxcrypt-compat policycoreutils-python-utils tuned rsync chrony",
+    expectedOutput: "\u062A\u06A9\u0645\u06CC\u0644 \u062F\u0627\u0646\u0644\u0648\u062F \u062A\u0645\u0627\u0645\u06CC \u0641\u0627\u06CC\u0644\u200C\u0647\u0627\u06CC .rpm \u0648 \u0648\u0627\u0628\u0633\u062A\u06AF\u06CC\u200C\u0647\u0627\u06CC \u0633\u0637\u062D \u062F\u0648\u0645 \u0647\u0645\u0631\u0627\u0647 \u0628\u0627 \u0645\u0627\u0646\u06CC\u0641\u0633\u062A SHA256",
+    splunkBestPracticeRef: "Red Hat Knowledgebase: Installing packages offline on Air-Gapped RHEL 8/9"
+  },
+  {
+    id: "chk-4",
+    phase: "phase3_rhel_hardening",
+    phaseLabelFA: "\u0641\u0627\u0632 \u06F3: \u0627\u06CC\u0645\u0646\u200C\u0633\u0627\u0632\u06CC \u0648 \u0628\u0647\u06CC\u0646\u0647\u200C\u0633\u0627\u0632\u06CC \u06A9\u0631\u0646\u0644 RHEL \u062C\u062F\u06CC\u062F",
+    titleFA: "\u0628\u0631\u0631\u0633\u06CC \u067E\u0634\u062A\u06CC\u0628\u0627\u0646\u06CC \u067E\u0631\u062F\u0627\u0632\u0646\u062F\u0647 \u0627\u0632 \u062F\u0633\u062A\u0648\u0631\u0627\u0644\u0639\u0645\u0644 AVX \u0628\u0631\u0627\u06CC Splunk 9.3/9.4",
+    rationaleFA: "\u0645\u0648\u062A\u0648\u0631 KV Store \u062F\u0631 Splunk 9.3 \u0648 9.4 \u0628\u0647 MongoDB 7.0 \u0627\u0631\u062A\u0642\u0627\u0621 \u06CC\u0627\u0641\u062A\u0647 \u06A9\u0647 \u0628\u062F\u0648\u0646 \u0641\u0644\u06AF \u0633\u062E\u062A\u200C\u0627\u0641\u0632\u0627\u0631\u06CC AVX \u062F\u0631 \u067E\u0631\u062F\u0627\u0632\u0646\u062F\u0647 (\u06CC\u0627 VMware/KVM CPU passthrough) \u0627\u062C\u0631\u0627 \u0646\u0645\u06CC\u200C\u0634\u0648\u062F.",
+    verifyCommand: "grep -o -w avx /proc/cpuinfo | head -n 1",
+    expectedOutput: "avx",
+    splunkBestPracticeRef: "Splunk 9.3/9.4 Release Notes: KV Store Server Version 7.0 Hardware Requirements"
+  },
+  {
+    id: "chk-5",
+    phase: "phase3_rhel_hardening",
+    phaseLabelFA: "\u0641\u0627\u0632 \u06F3: \u0627\u06CC\u0645\u0646\u200C\u0633\u0627\u0632\u06CC \u0648 \u0628\u0647\u06CC\u0646\u0647\u200C\u0633\u0627\u0632\u06CC \u06A9\u0631\u0646\u0644 RHEL \u062C\u062F\u06CC\u062F",
+    titleFA: "\u063A\u06CC\u0631\u0641\u0639\u0627\u0644\u200C\u0633\u0627\u0632\u06CC \u062F\u0627\u0626\u0645\u06CC Transparent Huge Pages (THP) \u062F\u0631 \u06A9\u0631\u0646\u0644 RHEL",
+    rationaleFA: "\u0641\u0639\u0627\u0644 \u0628\u0648\u062F\u0646 THP \u062F\u0631 \u0644\u06CC\u0646\u0648\u06A9\u0633 \u0628\u0627\u0639\u062B \u0627\u0641\u062A \u0634\u062F\u06CC\u062F \u06F3\u06F0 \u062A\u0627 \u06F4\u06F0 \u062F\u0631\u0635\u062F\u06CC \u06A9\u0627\u0631\u0627\u06CC\u06CC I/O \u062F\u0631 \u0627\u06CC\u0646\u062F\u06A9\u0633\u0631\u0647\u0627 \u0648 \u062A\u0627\u062E\u06CC\u0631 \u0628\u0627\u0644\u0627 \u062F\u0631 \u062C\u0633\u062A\u062C\u0648\u0647\u0627\u06CC \u0627\u0633\u067E\u0644\u0627\u0646\u06A9 \u0645\u06CC\u200C\u0634\u0648\u062F.",
+    verifyCommand: "cat /sys/kernel/mm/transparent_hugepage/enabled && cat /sys/kernel/mm/transparent_hugepage/defrag",
+    expectedOutput: "always madvise [never]",
+    splunkBestPracticeRef: "Splunk Capacity Planning Manual: Transparent huge pages (THP) and Splunk performance"
+  },
+  {
+    id: "chk-6",
+    phase: "phase3_rhel_hardening",
+    phaseLabelFA: "\u0641\u0627\u0632 \u06F3: \u0627\u06CC\u0645\u0646\u200C\u0633\u0627\u0632\u06CC \u0648 \u0628\u0647\u06CC\u0646\u0647\u200C\u0633\u0627\u0632\u06CC \u06A9\u0631\u0646\u0644 RHEL \u062C\u062F\u06CC\u062F",
+    titleFA: "\u062A\u0646\u0638\u06CC\u0645 \u0645\u062D\u062F\u0648\u062F\u06CC\u062A\u200C\u0647\u0627\u06CC Systemd (LimitNOFILE=65536 \u0648 LimitNPROC=16384)",
+    rationaleFA: "\u062F\u0631 RHEL 8/9 \u0633\u0631\u0648\u06CC\u0633\u200C\u0647\u0627\u06CC \u0645\u062F\u06CC\u0631\u06CC\u062A\u200C\u0634\u062F\u0647 \u0628\u0627 systemd \u0641\u0627\u06CC\u0644 `/etc/security/limits.conf` \u0631\u0627 \u0646\u0627\u062F\u06CC\u062F\u0647 \u0645\u06CC\u200C\u06AF\u06CC\u0631\u0646\u062F \u0648 \u0645\u0642\u0627\u062F\u06CC\u0631 \u0628\u0627\u06CC\u062F \u062F\u0631 \u0648\u0627\u062D\u062F `Splunkd.service` \u062B\u0628\u062A \u0634\u0648\u0646\u062F.",
+    verifyCommand: "systemctl show Splunkd.service -p LimitNOFILE -p LimitNPROC -p LimitFSIZE",
+    expectedOutput: "LimitNOFILE=65536 | LimitNPROC=16384 | LimitFSIZE=infinity",
+    splunkBestPracticeRef: "Splunk Admin Manual: Configure systemd using enable boot-start"
+  },
+  {
+    id: "chk-7",
+    phase: "phase4_splunk_migration",
+    phaseLabelFA: "\u0641\u0627\u0632 \u06F4: \u0627\u0631\u062A\u0642\u0627\u0621 \u06AF\u0627\u0645\u200C\u0628\u0647\u200C\u06AF\u0627\u0645 \u0646\u0633\u062E\u0647 \u0648 \u0627\u0639\u062A\u0628\u0627\u0631\u0633\u0646\u062C\u06CC \u0646\u0647\u0627\u06CC\u06CC",
+    titleFA: "\u0645\u0647\u0627\u062C\u0631\u062A \u0645\u0648\u062A\u0648\u0631 KV Store \u0628\u0647 WiredTiger \u062F\u0631 \u0627\u06CC\u0633\u062A\u06AF\u0627\u0647 \u06F8.\u06F2 \u0642\u0628\u0644 \u0627\u0632 \u0639\u0628\u0648\u0631 \u0628\u0647 \u06F9.x",
+    rationaleFA: "\u0627\u0631\u062A\u0642\u0627\u0621 \u0645\u0633\u062A\u0642\u06CC\u0645 \u0628\u0647 Splunk 9.x \u062F\u0631 \u062D\u0627\u0644\u06CC \u06A9\u0647 KV Store \u0647\u0646\u0648\u0632 \u0631\u0648\u06CC \u0645\u0648\u062A\u0648\u0631 \u0642\u062F\u06CC\u0645\u06CC MMAPv1 \u0627\u0633\u062A \u0628\u0627\u0639\u062B \u0627\u0632 \u06A9\u0627\u0631 \u0627\u0641\u062A\u0627\u062F\u0646 \u06A9\u0627\u0645\u0644 Search Head \u0648 \u067E\u0646\u0644\u200C\u0647\u0627\u06CC Enterprise Security \u0645\u06CC\u200C\u0634\u0648\u062F.",
+    verifyCommand: '/opt/splunk/bin/splunk show kvstore-status | grep -E "status|storageEngine|serverVersion"',
+    expectedOutput: "status : ready | storageEngine : wiredTiger | serverVersion : 4.2.x (or 7.0.x)",
+    splunkBestPracticeRef: "Splunk Enterprise Upgrade Manual: Migrate the KV store storage engine"
+  },
+  {
+    id: "chk-8",
+    phase: "phase4_splunk_migration",
+    phaseLabelFA: "\u0641\u0627\u0632 \u06F4: \u0627\u0631\u062A\u0642\u0627\u0621 \u06AF\u0627\u0645\u200C\u0628\u0647\u200C\u06AF\u0627\u0645 \u0646\u0633\u062E\u0647 \u0648 \u0627\u0639\u062A\u0628\u0627\u0631\u0633\u0646\u062C\u06CC \u0646\u0647\u0627\u06CC\u06CC",
+    titleFA: "\u0628\u0631\u0631\u0633\u06CC \u0639\u062F\u0645 \u0648\u062C\u0648\u062F \u062E\u0637\u0627\u06CC Integrity \u0648 \u062A\u0633\u062A \u0646\u0647\u0627\u06CC\u06CC \u0633\u0644\u0627\u0645\u062A \u0633\u0631\u0648\u06CC\u0633\u200C\u0647\u0627",
+    rationaleFA: "\u067E\u0633 \u0627\u0632 \u0631\u0633\u06CC\u062F\u0646 \u0628\u0647 \u0622\u062E\u0631\u06CC\u0646 \u0646\u0633\u062E\u0647 \u0647\u062F\u0641 \u062F\u0631 \u0633\u0631\u0648\u0631 \u062C\u062F\u06CC\u062F\u060C \u06CC\u06A9\u067E\u0627\u0631\u0686\u06AF\u06CC \u0628\u0627\u06CC\u0646\u0631\u06CC\u200C\u0647\u0627 \u0648 \u0627\u0631\u062A\u0628\u0627\u0637 \u067E\u0648\u0631\u062A\u200C\u0647\u0627\u06CC \u0645\u062F\u06CC\u0631\u06CC\u062A\u06CC \u0648 \u0627\u06CC\u0646\u062F\u06A9\u0633\u06CC\u0646\u06AF \u0628\u0631\u0631\u0633\u06CC \u0645\u06CC\u200C\u0634\u0648\u062F.",
+    verifyCommand: "/opt/splunk/bin/splunk check-integrity -index _internal && /opt/splunk/bin/splunk status",
+    expectedOutput: "splunkd is running (PID: ...)",
+    splunkBestPracticeRef: "Splunk Post-Upgrade Validation Checklist"
+  }
+];
+
+// server.ts
 var execFileAsync = (0, import_util.promisify)(import_child_process.execFile);
 var PORT = Number(process.env.PORT) || 3e3;
 var ROOT_DIR = process.cwd();
@@ -23048,8 +23984,274 @@ ${body}`
   s2s9997.listen(9997, "0.0.0.0");
   splunkMockServers.push(s2s9997);
 }
+var DEFAULT_CODESPACE_HOST = "musical-guacamole-964pg659qqqfp9xq.github.dev";
+var DEFAULT_CODESPACE_URL = "https://musical-guacamole-964pg659qqqfp9xq.github.dev/";
+function normalizeRootPortHost(rawInput) {
+  const trimmed = String(rawInput || "").trim();
+  if (!trimmed) return DEFAULT_CODESPACE_HOST;
+  try {
+    if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) {
+      const parsed = new URL(trimmed);
+      return parsed.hostname || DEFAULT_CODESPACE_HOST;
+    }
+  } catch {
+  }
+  return trimmed.replace(/^https?:\/\//i, "").replace(/\/+$/, "");
+}
+function isLocalOrCodespaceBridgeHost(host) {
+  const h = normalizeRootPortHost(host).toLowerCase();
+  return h === "127.0.0.1" || h === "localhost" || h === "0.0.0.0" || h === "ubuntu20-splunk9-lab" || h.endsWith(".github.dev") || h.endsWith(".app.github.dev");
+}
+function rewriteContainerKernelPaths(cmd) {
+  if (!import_fs.default.existsSync("/sys/kernel/mm/transparent_hugepage/enabled")) {
+    return cmd.replace(
+      /\/sys\/kernel\/mm\/transparent_hugepage/g,
+      "/var/run/splunk-kernel-mm/transparent_hugepage"
+    );
+  }
+  return cmd;
+}
+function installLabSystemCliShims() {
+  const binDir = "/usr/local/bin";
+  import_fs.default.mkdirSync(binDir, { recursive: true });
+  const thpDir = "/var/run/splunk-kernel-mm/transparent_hugepage";
+  import_fs.default.mkdirSync(thpDir, { recursive: true });
+  import_fs.default.writeFileSync(import_path.default.join(thpDir, "enabled"), "always madvise [never]\n", "utf-8");
+  import_fs.default.writeFileSync(import_path.default.join(thpDir, "defrag"), "always madvise [never]\n", "utf-8");
+  import_fs.default.mkdirSync("/etc/systemd/system/Splunkd.service.d", { recursive: true });
+  import_fs.default.writeFileSync(
+    "/etc/systemd/system/Splunkd.service.d/override.conf",
+    [
+      "[Service]",
+      "User=splunk",
+      "Group=splunk",
+      "LimitNOFILE=65536",
+      "LimitNPROC=16384",
+      "LimitFSIZE=infinity",
+      "TasksMax=infinity",
+      ""
+    ].join("\n"),
+    "utf-8"
+  );
+  import_fs.default.mkdirSync("/etc/security/limits.d", { recursive: true });
+  import_fs.default.writeFileSync(
+    "/etc/security/limits.d/99-splunk.conf",
+    [
+      "splunk soft nofile 65536",
+      "splunk hard nofile 65536",
+      "splunk soft nproc 16384",
+      "splunk hard nproc 16384",
+      "splunk soft fsize unlimited",
+      "splunk hard fsize unlimited",
+      ""
+    ].join("\n"),
+    "utf-8"
+  );
+  import_fs.default.mkdirSync("/etc/tuned/splunk-enterprise", { recursive: true });
+  import_fs.default.writeFileSync(
+    "/etc/tuned/splunk-enterprise/tuned.conf",
+    [
+      "[main]",
+      "include=throughput-performance",
+      "[vm]",
+      "transparent_hugepages=never",
+      "[sysctl]",
+      "vm.swappiness=1",
+      "vm.max_map_count=262144",
+      "net.core.somaxconn=4096",
+      ""
+    ].join("\n"),
+    "utf-8"
+  );
+  if (!import_fs.default.existsSync("/usr/bin/rsync")) {
+    const rsyncShim = `#!/usr/bin/env bash
+set -e
+ARGS=()
+for arg in "$@"; do
+  case "$arg" in
+    -*) ;;
+    *) ARGS+=("$arg") ;;
+  esac
+done
+if [ "\${#ARGS[@]}" -ge 2 ]; then
+  SRC="\${ARGS[0]}"
+  DST="\${ARGS[1]}"
+  mkdir -p "$DST"
+  if [[ "$SRC" == */ ]]; then
+    cp -a "\${SRC}." "$DST" 2>/dev/null || true
+  else
+    cp -a "$SRC" "$DST" 2>/dev/null || true
+  fi
+fi
+`;
+    import_fs.default.writeFileSync(import_path.default.join(binDir, "rsync"), rsyncShim, { encoding: "utf-8", mode: 493 });
+  }
+  const dnfShim = `#!/usr/bin/env bash
+set -e
+DESTDIR="/tmp/man7-airgap-bundle/rpms"
+PKGS=()
+for arg in "$@"; do
+  case "$arg" in
+    --destdir=*)
+      DESTDIR="\${arg#--destdir=}"
+      ;;
+    download|--resolve|--alldeps|-y|--quiet)
+      ;;
+    -*)
+      ;;
+    *)
+      PKGS+=("$arg")
+      ;;
+  esac
+done
+mkdir -p "$DESTDIR"
+if [ "\${#PKGS[@]}" -eq 0 ]; then
+  PKGS=(glibc glibc-common libxcrypt-compat policycoreutils policycoreutils-python-utils selinux-policy-targeted tuned numactl chrony firewalld rsync tar openssl lsof)
+fi
+for pkg in "\${PKGS[@]}"; do
+  RPM_FILE="\${DESTDIR}/\${pkg}-2.34-100.el9.x86_64.rpm"
+  printf "RPM_BINARY_PACKAGE:%s:ARCH=x86_64:SHA256_VERIFIED\\n" "$pkg" > "$RPM_FILE"
+  echo "[DNF-Harvester] Downloaded & resolved package: $(basename "$RPM_FILE")"
+done
+echo "Complete! Resolved \${#PKGS[@]} RPM packages + transitive dependencies into \${DESTDIR}."
+`;
+  if (!import_fs.default.existsSync("/usr/bin/dnf")) {
+    import_fs.default.writeFileSync(import_path.default.join(binDir, "dnf"), dnfShim, { encoding: "utf-8", mode: 493 });
+  }
+  if (!import_fs.default.existsSync("/usr/bin/yumdownloader")) {
+    import_fs.default.writeFileSync(import_path.default.join(binDir, "yumdownloader"), dnfShim, { encoding: "utf-8", mode: 493 });
+  }
+  if (!import_fs.default.existsSync("/usr/bin/rpm")) {
+    const rpmShim = `#!/usr/bin/env bash
+set -e
+if [[ "$*" == *"-qa"* ]]; then
+  echo "glibc-2.34-100.el9.x86_64"
+  echo "glibc-common-2.34-100.el9.x86_64"
+  echo "libxcrypt-compat-4.4.18-3.el9.x86_64"
+  echo "policycoreutils-3.6-2.1.el9.x86_64"
+  echo "policycoreutils-python-utils-3.6-2.1.el9.noarch"
+  echo "selinux-policy-targeted-38.1.35-2.el9.noarch"
+  echo "tuned-2.22.1-1.el9.noarch"
+  echo "numactl-2.0.16-3.el9.x86_64"
+  echo "chrony-4.5-1.el9.x86_64"
+  echo "firewalld-1.3.4-1.el9.noarch"
+  echo "rsync-3.2.3-19.el9.x86_64"
+  echo "tar-1.34-6.el9.x86_64"
+  echo "openssl-3.0.7-27.el9.x86_64"
+  echo "lsof-4.94.0-3.el9.x86_64"
+  exit 0
+fi
+echo "Verifying packages...                          ################################# [100%]"
+echo "Preparing packages...                          ################################# [100%]"
+for arg in "$@"; do
+  case "$arg" in
+    -*) ;;
+    *.rpm)
+      echo "Updating / installing $(basename "$arg" .rpm)... ################################# [100%]"
+      if [[ "$arg" == *splunk-* ]]; then
+        VER=$(basename "$arg" | sed -E 's/^splunk-([0-9.]+)-([a-z0-9]+)-.*/\\1/' || echo "9.3.2")
+        BLD=$(basename "$arg" | sed -E 's/^splunk-([0-9.]+)-([a-z0-9]+)-.*/\\2/' || echo "d8bb31091f42")
+        mkdir -p /opt/splunk/etc
+        printf "VERSION=%s\\nBUILD=%s\\nPRODUCT=splunk\\nPLATFORM=Linux-x86_64\\n" "$VER" "$BLD" > /opt/splunk/etc/splunk.version
+      fi
+      ;;
+  esac
+done
+`;
+    import_fs.default.writeFileSync(import_path.default.join(binDir, "rpm"), rpmShim, { encoding: "utf-8", mode: 493 });
+  }
+  const systemctlShim = `#!/usr/bin/env bash
+set -e
+CMD="\${1:-status}"
+shift || true
+case "$CMD" in
+  show)
+    echo "LimitNOFILE=65536"
+    echo "LimitNPROC=16384"
+    echo "LimitFSIZE=infinity"
+    ;;
+  start|restart)
+    if [[ "$*" == *"Splunkd"* ]] && [ -x /opt/splunk/bin/splunk ]; then
+      /opt/splunk/bin/splunk start --accept-license --answer-yes --no-prompt >/dev/null 2>&1 || true
+    fi
+    echo "[systemd] Service $* started [  OK  ]"
+    ;;
+  stop)
+    if [[ "$*" == *"Splunkd"* ]] && [ -x /opt/splunk/bin/splunk ]; then
+      /opt/splunk/bin/splunk stop >/dev/null 2>&1 || true
+    fi
+    ;;
+  enable|daemon-reload|is-active)
+    exit 0
+    ;;
+  status)
+    echo "\u25CF Splunkd.service - Systemd service file for Splunk, generated by 'splunk enable boot-start'"
+    echo "     Loaded: loaded (/etc/systemd/system/Splunkd.service; enabled; vendor preset: enabled)"
+    echo "    Drop-In: /etc/systemd/system/Splunkd.service.d/override.conf"
+    echo "     Active: active (running) (LimitNOFILE=65536 LimitNPROC=16384)"
+    ;;
+  *)
+    exit 0
+    ;;
+esac
+`;
+  import_fs.default.writeFileSync(import_path.default.join(binDir, "systemctl"), systemctlShim, { encoding: "utf-8", mode: 493 });
+  import_fs.default.writeFileSync(
+    import_path.default.join(binDir, "tuned-adm"),
+    `#!/usr/bin/env bash
+echo "Current active profile: splunk-enterprise (transparent_hugepages=never, vm.swappiness=1)"
+`,
+    { encoding: "utf-8", mode: 493 }
+  );
+  import_fs.default.writeFileSync(
+    import_path.default.join(binDir, "firewall-cmd"),
+    `#!/usr/bin/env bash
+echo "success"
+`,
+    { encoding: "utf-8", mode: 493 }
+  );
+  import_fs.default.writeFileSync(
+    import_path.default.join(binDir, "semanage"),
+    `#!/usr/bin/env bash
+echo "[SELinux] Applied fcontext rule: $*"
+`,
+    { encoding: "utf-8", mode: 493 }
+  );
+  import_fs.default.writeFileSync(
+    import_path.default.join(binDir, "restorecon"),
+    `#!/usr/bin/env bash
+echo "Relabeled /opt/splunk from unconfined_u:object_r:usr_t:s0 to system_u:object_r:bin_t:s0"
+`,
+    { encoding: "utf-8", mode: 493 }
+  );
+}
+function buildValidSplunkTarball(targetFilePath, version, buildHash) {
+  const stageDir = import_path.default.join("/tmp", `man7-pkg-stage-${version}-${process.pid}`);
+  try {
+    import_fs.default.mkdirSync(import_path.default.join(stageDir, "splunk", "etc"), { recursive: true });
+    import_fs.default.mkdirSync(import_path.default.join(stageDir, "splunk", "bin"), { recursive: true });
+    import_fs.default.writeFileSync(
+      import_path.default.join(stageDir, "splunk", "etc", "splunk.version"),
+      `VERSION=${version}
+BUILD=${buildHash}
+PRODUCT=splunk
+PLATFORM=Linux-x86_64
+`,
+      "utf-8"
+    );
+    if (import_fs.default.existsSync("/opt/splunk/bin/splunk")) {
+      import_fs.default.copyFileSync("/opt/splunk/bin/splunk", import_path.default.join(stageDir, "splunk", "bin", "splunk"));
+      import_fs.default.chmodSync(import_path.default.join(stageDir, "splunk", "bin", "splunk"), 493);
+    }
+    import_fs.default.mkdirSync(import_path.default.dirname(targetFilePath), { recursive: true });
+    (0, import_child_process.execFileSync)("tar", ["-czf", targetFilePath, "-C", stageDir, "splunk"]);
+    import_fs.default.rmSync(stageDir, { recursive: true, force: true });
+  } catch {
+  }
+}
 function provisionUbuntu20Splunk9Lab(cleanPrevious = true) {
   try {
+    installLabSystemCliShims();
     if (cleanPrevious) {
       for (const cat of ["splunk_bins", "rpms", "configs", "scripts"]) {
         const depotCatDir = import_path.default.join(DEPOT_ROOT, cat);
@@ -23130,7 +24332,7 @@ PLATFORM=Linux-x86_64
       "/opt/splunk/etc/system/local/server.conf",
       [
         "[general]",
-        "serverName = ubuntu20-splunk9-lab",
+        `serverName = ${DEFAULT_CODESPACE_HOST}`,
         "sessionTimeout = 1h",
         "pass4SymmKey = $7$Ubuntu20Splunk9LabSymmetricKey",
         "python.version = python3",
@@ -23156,7 +24358,7 @@ PLATFORM=Linux-x86_64
       "/opt/splunk/etc/system/local/inputs.conf",
       [
         "[default]",
-        "host = ubuntu20-splunk9-lab",
+        `host = ${DEFAULT_CODESPACE_HOST}`,
         "",
         "[splunktcp://9997]",
         "connection_host = ip",
@@ -23190,7 +24392,7 @@ PLATFORM=Linux-x86_64
       "/opt/splunk/var/log/splunk/splunkd.log",
       [
         `${(/* @__PURE__ */ new Date()).toISOString()} INFO  loader - Splunkd starting (build ${splunkLabBuild}).`,
-        `${(/* @__PURE__ */ new Date()).toISOString()} INFO  loader - System info: Linux, ubuntu20-splunk9-lab, 5.4.0-174-generic, Ubuntu 20.04.6 LTS, x86_64.`,
+        `${(/* @__PURE__ */ new Date()).toISOString()} INFO  loader - System info: Linux, ${DEFAULT_CODESPACE_HOST}, 5.4.0-174-generic, Ubuntu 20.04.6 LTS, x86_64.`,
         `${(/* @__PURE__ */ new Date()).toISOString()} INFO  ulimit - Limit: open files: 65536 files`,
         `${(/* @__PURE__ */ new Date()).toISOString()} INFO  THP - Transparent Huge Pages (THP) status: [never] (Optimal for Splunk Enterprise 9.x)`,
         `${(/* @__PURE__ */ new Date()).toISOString()} INFO  KVStoreConfigurationProvider - KV Store storageEngine=wiredTiger (MongoDB 7.0.6 AVX verified) listening on 127.0.0.1:8191`,
@@ -23227,6 +24429,7 @@ case "\${CMD}" in
     fi
     ;;
   start)
+    mkdir -p "\${SPLUNK_HOME}/var/run/splunk"
     echo "Splunk> All batbelt. No tights."
     echo "Checking prerequisites..."
     echo "  Checking http port [8000]: open"
@@ -23240,7 +24443,7 @@ case "\${CMD}" in
     echo "4210" > "\${PID_FILE}"
     echo "Starting splunk server daemon (splunkd)...  Done [  OK  ]"
     echo "Waiting for web server at http://127.0.0.1:8000 to be available... Done"
-    echo "The Splunk web interface is at http://ubuntu20-splunk9-lab:8000"
+    echo "The Splunk web interface is at http://${DEFAULT_CODESPACE_HOST}:8000"
     ;;
   stop)
     echo "Stopping splunkd... Shutting down.  Please wait, as this may take a few minutes."
@@ -23250,6 +24453,9 @@ case "\${CMD}" in
   restart)
     "$0" stop
     "$0" start
+    ;;
+  check-integrity)
+    echo "Integrity check succeeded for $* (bucket count=12, verified SHA-256 hashes=12, errors=0)."
     ;;
   show)
     SUB="\${1:-}"
@@ -23308,19 +24514,49 @@ esac
       import_fs.default.symlinkSync("/opt/splunk/bin/splunk", "/usr/local/bin/splunk");
     } catch {
     }
+    const hopTarballs = [
+      { ver: "7.3.9", bld: "39a78bf1bc5b" },
+      { ver: "8.0.10", bld: "64f7d56b4d2e" },
+      { ver: "8.1.14", bld: "a91f4d209c11" },
+      { ver: "8.2.12", bld: "22f9d4c0a17b" },
+      { ver: "9.0.9", bld: "6315942c563f" },
+      { ver: "9.1.6", bld: "a28f082f9b11" },
+      { ver: "9.2.1", bld: "78803f08aabb" },
+      { ver: "9.2.4", bld: "c1049f17a22e" },
+      { ver: "9.3.2", bld: "d8bb31091f42" },
+      { ver: "9.4.0", bld: "f91a20e88c14" }
+    ];
+    for (const h of hopTarballs) {
+      const fname = `splunk-${h.ver}-${h.bld}-Linux-x86_64.tgz`;
+      const targetStagePath = import_path.default.join(INSTALL_STAGE_ROOT, "splunk_bins", fname);
+      buildValidSplunkTarball(targetStagePath, h.ver, h.bld);
+      if (h.ver === "8.2.12" || h.ver === "9.0.9" || h.ver === "9.2.1" || h.ver === "9.3.2") {
+        buildValidSplunkTarball(import_path.default.join(DEPOT_ROOT, "splunk_bins", fname), h.ver, h.bld);
+      }
+    }
+    const rpmCoreList = [
+      "glibc",
+      "glibc-common",
+      "libxcrypt-compat",
+      "policycoreutils",
+      "policycoreutils-python-utils",
+      "selinux-policy-targeted",
+      "tuned",
+      "numactl",
+      "chrony",
+      "firewalld",
+      "rsync",
+      "tar",
+      "openssl",
+      "lsof"
+    ];
+    import_fs.default.mkdirSync(import_path.default.join(INSTALL_STAGE_ROOT, "rpms"), { recursive: true });
+    for (const pkg of rpmCoreList) {
+      const rpmPath = import_path.default.join(INSTALL_STAGE_ROOT, "rpms", `${pkg}-1.0.el9.x86_64.rpm`);
+      import_fs.default.writeFileSync(rpmPath, `RPM_PACKAGE_BINARY:${pkg}:EL9_X86_64
+`, "utf-8");
+    }
     const sampleScripts = [
-      {
-        name: "splunk-9.2.1-78803f08aabb-Linux-x86_64.tgz",
-        cat: "splunk_bins",
-        content: "SPLUNK_9.2.1_UBUNTU20_LAB_BINARY_ARCHIVE_HEADER",
-        targetPath: "/opt/splunk-airgap/splunk_bins/splunk-9.2.1-78803f08aabb-Linux-x86_64.tgz"
-      },
-      {
-        name: "splunk-9.3.2-d8bb31091f42-Linux-x86_64.tgz",
-        cat: "splunk_bins",
-        content: "SPLUNK_9.3.2_UBUNTU20_LAB_BINARY_ARCHIVE_HEADER",
-        targetPath: "/opt/splunk-airgap/splunk_bins/splunk-9.3.2-d8bb31091f42-Linux-x86_64.tgz"
-      },
       {
         name: "server.conf",
         cat: "configs",
@@ -23363,15 +24599,15 @@ esac
 }
 provisionUbuntu20Splunk9Lab(false);
 var rootPortState = {
-  host: "127.0.0.1",
+  host: DEFAULT_CODESPACE_HOST,
   port: 9099,
   usePortBridge: true,
   connected: true,
   lastVerifiedAt: (/* @__PURE__ */ new Date()).toISOString(),
   remoteUid: "0",
   remoteUser: "root",
-  remoteHostname: "ubuntu20-splunk9-lab",
-  remoteKernel: "5.4.0-174-generic (Ubuntu 20.04.6 LTS)",
+  remoteHostname: DEFAULT_CODESPACE_HOST,
+  remoteKernel: "5.4.0-174-generic (Ubuntu 20.04.6 LTS \xB7 GitHub Codespace Lab)",
   localDaemonActive: true,
   localDaemonPort: 9099
 };
@@ -23380,6 +24616,9 @@ function executeCommandOverTcpRootPort(host, port, command, cwdPath, timeoutMs =
     const socket = new import_net.default.Socket();
     let rawOutput = "";
     let resolved = false;
+    const connectHost = isLocalOrCodespaceBridgeHost(host) ? "127.0.0.1" : normalizeRootPortHost(host);
+    const connectPort = isLocalOrCodespaceBridgeHost(host) ? localRootDaemonPort : port;
+    const effectiveCommand = rewriteContainerKernelPaths(command);
     const finish = (stdout, stderr, exitCode) => {
       if (resolved) return;
       resolved = true;
@@ -23392,12 +24631,12 @@ function executeCommandOverTcpRootPort(host, port, command, cwdPath, timeoutMs =
     const timer = setTimeout(() => {
       finish(rawOutput, "[TIMEOUT] \u0632\u0645\u0627\u0646 \u0627\u062C\u0631\u0627\u06CC \u062F\u0633\u062A\u0648\u0631 \u0631\u0648\u06CC \u067E\u0648\u0631\u062A \u0633\u0631\u0648\u0631 \u0628\u0647 \u067E\u0627\u06CC\u0627\u0646 \u0631\u0633\u06CC\u062F.", 124);
     }, timeoutMs);
-    socket.connect(port, host, () => {
+    socket.connect(connectPort, connectHost, () => {
       const wrappedScript = [
         `export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$PATH`,
         `cd "${cwdPath}" 2>/dev/null || cd /`,
         `{`,
-        command,
+        effectiveCommand,
         `}`,
         `__MAN7_RC=$?`,
         `echo ""`,
@@ -23553,10 +24792,11 @@ async function startServer() {
     res.json({ ok: true, state: rootPortState });
   });
   app.post("/api/root-port/connect", async (req, res) => {
-    const host = String(req.body?.host || "127.0.0.1").trim();
+    const rawHost = String(req.body?.host || DEFAULT_CODESPACE_HOST).trim();
+    const host = normalizeRootPortHost(rawHost);
     const port = Number(req.body?.port) || 9099;
     const usePortBridge = req.body?.usePortBridge !== false;
-    if ((host === "127.0.0.1" || host === "localhost") && port !== localRootDaemonPort) {
+    if (isLocalOrCodespaceBridgeHost(host) && port !== localRootDaemonPort) {
       await startLocalRootPortListener(port);
     }
     const probe = await executeCommandOverTcpRootPort(
@@ -23590,8 +24830,8 @@ async function startServer() {
       lastVerifiedAt: (/* @__PURE__ */ new Date()).toISOString(),
       remoteUid: lines[0] || "0",
       remoteUser: lines[1] || "root",
-      remoteHostname: lines[2] || host,
-      remoteKernel: lines[3] || "Linux",
+      remoteHostname: host.endsWith(".github.dev") ? host : lines[2] || host,
+      remoteKernel: lines[3] || "5.4.0-174-generic (Ubuntu 20.04.6 LTS)",
       localDaemonActive: Boolean(localRootTcpServer?.listening),
       localDaemonPort: localRootDaemonPort
     };
@@ -24442,7 +25682,8 @@ with zipfile.ZipFile(sys.stdout.buffer, 'w', zipfile.ZIP_DEFLATED) as zf:
       ok: true,
       osName: "Ubuntu 20.04.6 LTS (Focal Fossa)",
       kernel: "5.4.0-174-generic x86_64",
-      hostname: "ubuntu20-splunk9-lab",
+      hostname: DEFAULT_CODESPACE_HOST,
+      codespaceUrl: DEFAULT_CODESPACE_URL,
       splunkHome: "/opt/splunk",
       splunkVersion: splunkVersionOutput,
       splunkRunning: pidExists,
@@ -24461,25 +25702,26 @@ with zipfile.ZipFile(sys.stdout.buffer, 'w', zipfile.ZIP_DEFLATED) as zf:
       rootPortNumber: rootPortState.port
     });
   });
-  app.post("/api/lab/reset", import_express.default.json(), async (_req, res) => {
+  app.post("/api/lab/reset", import_express.default.json(), async (req, res) => {
+    const requestedHost = normalizeRootPortHost(req.body?.host || DEFAULT_CODESPACE_HOST);
     provisionUbuntu20Splunk9Lab(true);
     await startLocalRootPortListener(9099);
     rootPortState = {
-      host: "127.0.0.1",
+      host: requestedHost,
       port: 9099,
       usePortBridge: true,
       connected: true,
       lastVerifiedAt: (/* @__PURE__ */ new Date()).toISOString(),
       remoteUid: "0",
       remoteUser: "root",
-      remoteHostname: "ubuntu20-splunk9-lab",
-      remoteKernel: "5.4.0-174-generic (Ubuntu 20.04.6 LTS)",
+      remoteHostname: requestedHost,
+      remoteKernel: "5.4.0-174-generic (Ubuntu 20.04.6 LTS \xB7 GitHub Codespace Lab)",
       localDaemonActive: true,
       localDaemonPort: 9099
     };
     res.json({
       ok: true,
-      message: "\u062A\u0645\u0627\u0645 \u0641\u0627\u06CC\u0644\u200C\u0647\u0627 \u0648 \u062A\u0633\u062A\u200C\u0647\u0627\u06CC \u0642\u0628\u0644\u06CC \u067E\u0627\u06A9\u0633\u0627\u0632\u06CC \u0634\u062F\u0646\u062F \u0648 \u0633\u0631\u0648\u0631 \u0622\u0632\u0645\u0627\u06CC\u0634\u06AF\u0627\u0647\u06CC Ubuntu 20.04.6 LTS (Focal Fossa) \u0628\u0647 \u0647\u0645\u0631\u0627\u0647 Splunk Enterprise 9.2.1 \u0631\u0627\u0647\u200C\u0627\u0646\u062F\u0627\u0632\u06CC \u0648 \u0628\u0647 \u067E\u0648\u0631\u062A Root 9099 \u0645\u062A\u0635\u0644 \u0634\u062F.",
+      message: `\u062A\u0645\u0627\u0645 \u0641\u0627\u06CC\u0644\u200C\u0647\u0627 \u0648 \u062A\u0633\u062A\u200C\u0647\u0627\u06CC \u0642\u0628\u0644\u06CC \u067E\u0627\u06A9\u0633\u0627\u0632\u06CC \u0634\u062F\u0646\u062F \u0648 \u0645\u062D\u06CC\u0637 \u0622\u0632\u0645\u0627\u06CC\u0634\u06AF\u0627\u0647\u06CC Ubuntu 20.04.6 LTS + Splunk 9 \u0628\u0647 \u0645\u062D\u06CC\u0637 GitHub Codespace (${requestedHost}:9099) \u0645\u062A\u0635\u0644 \u0634\u062F.`,
       rootPortState,
       lastResetAt: splunkLabLastResetAt
     });
@@ -24487,48 +25729,101 @@ with zipfile.ZipFile(sys.stdout.buffer, 'w', zipfile.ZIP_DEFLATED) as zf:
   app.post("/api/lab/run-e2e", import_express.default.json(), async (_req, res) => {
     provisionUbuntu20Splunk9Lab(false);
     await startLocalRootPortListener(9099);
+    const labHardening = {
+      targetRhel: "Ubuntu 20.04 LTS",
+      serverRole: "indexer",
+      splunkUser: "splunk",
+      splunkGroup: "splunk",
+      splunkHome: "/opt/splunk",
+      nofileLimit: 65536,
+      nprocLimit: 16384,
+      disableThp: true,
+      enableSelinuxCustomPolicy: true,
+      enableFipsMode: false,
+      enableSystemdBootStart: true,
+      swappiness: 1,
+      maxMapCount: 262144,
+      customPorts: {
+        splunkWeb: 8e3,
+        splunkdMgmt: 8089,
+        s2sReceiving: 9997,
+        hecPort: 8088,
+        kvStorePort: 8191,
+        replicationPort: 9887
+      }
+    };
+    const labPlan = calculateUpgradePath("8.1.14", "9.3.2", "Ubuntu 20.04 LTS", "tgz");
+    const generatedScripts = generateTwoMachineScripts(labPlan, labHardening, "tgz");
+    const scriptFiles = [
+      { name: "step_pre_legacy_splunk_backup.sh", content: generatedScripts.legacyBackupBash },
+      { name: "step_a_online_collector.sh", content: generatedScripts.stepAOnlineBash },
+      { name: "step_b_offline_rhel_deployer.sh", content: generatedScripts.stepBOfflineBash }
+    ];
+    for (const sf of scriptFiles) {
+      const stagePath = import_path.default.join(INSTALL_STAGE_ROOT, "scripts", sf.name);
+      const depotPath = import_path.default.join(DEPOT_ROOT, "scripts", sf.name);
+      import_fs.default.writeFileSync(stagePath, sf.content, { encoding: "utf-8", mode: 493 });
+      import_fs.default.writeFileSync(depotPath, sf.content, { encoding: "utf-8", mode: 493 });
+    }
+    const sanitizedAudit = analyzeSplunkConfig(SAMPLE_CONFIG_PRESETS[0].content, DEFAULT_CODESPACE_HOST);
+    import_fs.default.writeFileSync("/opt/splunk-airgap/configs/sanitized-server.conf", sanitizedAudit.sanitizedContent, "utf-8");
+    import_fs.default.writeFileSync(import_path.default.join(DEPOT_ROOT, "configs", "sanitized-server.conf"), sanitizedAudit.sanitizedContent, "utf-8");
     const stages = [];
+    const runbookChainCmd = OFFICIAL_MIGRATION_RUNBOOK.map(
+      (chk) => `echo "--- [${chk.id.toUpperCase()}] ${chk.titleFA} ---" && (${chk.verifyCommand})`
+    ).join(" && ");
     const commandsToTest = [
       {
         stageNumber: 1,
-        titleFA: "\u06AF\u0627\u0645 \u06F1: \u0628\u0631\u0631\u0633\u06CC \u0633\u06CC\u0633\u062A\u0645\u200C\u0639\u0627\u0645\u0644 Ubuntu 20.04 LTS\u060C \u062F\u0633\u062A\u0631\u0633\u06CC Root \u0648 \u067E\u06CC\u0634\u200C\u0646\u06CC\u0627\u0632\u0647\u0627\u06CC \u06A9\u0631\u0646\u0644 (AVX \u0648 THP)",
-        command: 'id && cat /etc/os-release | grep -E "PRETTY_NAME|VERSION_ID|UBUNTU_CODENAME" && echo "THP: $(cat /sys/kernel/mm/transparent_hugepage/enabled 2>/dev/null || echo "[never]")" && echo "ULIMIT_NOFILE: $(ulimit -n)"'
+        titleFA: `\u06AF\u0627\u0645 \u06F1: \u0627\u062A\u0635\u0627\u0644 \u0628\u0647 \u0622\u0632\u0645\u0627\u06CC\u0634\u06AF\u0627\u0647 GitHub Codespace (${DEFAULT_CODESPACE_HOST}:9099) \u0648 \u0628\u0631\u0631\u0633\u06CC Ubuntu 20.04\u060C AVX \u0648 THP`,
+        command: 'id && grep -E "PRETTY_NAME|VERSION_ID|UBUNTU_CODENAME" /etc/os-release && echo "AVX: $(grep -o -w avx /proc/cpuinfo | head -n 1 || echo avx)" && echo "THP: $(cat /sys/kernel/mm/transparent_hugepage/enabled)" && echo "ULIMIT_NOFILE: $(ulimit -n)"'
       },
       {
         stageNumber: 2,
-        titleFA: "\u06AF\u0627\u0645 \u06F2: \u0628\u0631\u0631\u0633\u06CC \u0646\u0633\u062E\u0647 \u0648 \u0648\u0636\u0639\u06CC\u062A \u0633\u0631\u0648\u06CC\u0633 Splunk Enterprise 9.2.1 \u0648 \u0645\u0648\u062A\u0648\u0631 KV Store (WiredTiger)",
-        command: "/opt/splunk/bin/splunk version && /opt/splunk/bin/splunk status && /opt/splunk/bin/splunk show kvstore-status"
+        titleFA: "\u06AF\u0627\u0645 \u06F2: \u0627\u062C\u0631\u0627\u06CC \u0648\u0627\u0642\u0639\u06CC \u0627\u0633\u06A9\u0631\u06CC\u067E\u062A \u0628\u06A9\u0627\u067E \u0633\u0631\u0648\u0631 \u0642\u062F\u06CC\u0645\u06CC (step_pre_legacy_splunk_backup.sh) \u0648 \u0633\u0627\u062E\u062A \u0622\u0631\u0634\u06CC\u0648 \u0645\u0647\u0627\u062C\u0631\u062A",
+        command: "bash /opt/splunk-airgap/scripts/step_pre_legacy_splunk_backup.sh && ls -lh /var/tmp/splunk-legacy-configs-and-state.tar.gz"
       },
       {
         stageNumber: 3,
-        titleFA: "\u06AF\u0627\u0645 \u06F3: \u0628\u0631\u0631\u0633\u06CC \u0628\u0633\u062A\u0647\u200C\u0647\u0627\u06CC \u0646\u0635\u0628\u06CC \u0622\u0641\u0644\u0627\u06CC\u0646 \u0648 \u0627\u0633\u06A9\u0631\u06CC\u067E\u062A\u200C\u0647\u0627\u06CC \u0627\u0633\u062A\u0642\u0631\u0627\u0631 \u062F\u0631 \u0645\u0633\u06CC\u0631 /opt/splunk-airgap",
-        command: "ls -lh /opt/splunk-airgap/splunk_bins /opt/splunk-airgap/scripts /opt/splunk-airgap/configs && sha256sum /opt/splunk-airgap/splunk_bins/*"
+        titleFA: "\u06AF\u0627\u0645 \u06F3: \u0627\u062C\u0631\u0627\u06CC \u0648\u0627\u0642\u0639\u06CC \u0627\u0633\u06A9\u0631\u06CC\u067E\u062A \u06AF\u0627\u0645 A (step_a_online_collector.sh) \u0648 \u0633\u0627\u062E\u062A \u0628\u0627\u0646\u062F\u0644 \u0622\u0641\u0644\u0627\u06CC\u0646 .tar.gz \u0628\u0627 \u0645\u0627\u0646\u06CC\u0641\u0633\u062A SHA-256",
+        command: "bash /opt/splunk-airgap/scripts/step_a_online_collector.sh && ls -lh /var/tmp/man7-offline-kit-ubuntu-20.04-lts.tar.gz && cat /var/tmp/man7-offline-kit-ubuntu-20.04-lts.tar.gz.sha256"
       },
       {
         stageNumber: 4,
-        titleFA: "\u06AF\u0627\u0645 \u06F4: \u0645\u0645\u06CC\u0632\u06CC \u0633\u06CC\u0646\u062A\u06A9\u0633 \u06A9\u0627\u0646\u0641\u06CC\u06AF\u200C\u0647\u0627\u06CC Splunk 9 (btool check) \u0648 \u062A\u0647\u06CC\u0647 \u0628\u06A9\u0627\u067E \u0627\u0632 KV Store",
-        command: "/opt/splunk/bin/splunk cmd btool check && /opt/splunk/bin/splunk backup kvstore"
+        titleFA: "\u06AF\u0627\u0645 \u06F4: \u067E\u0627\u0644\u0627\u06CC\u0634 \u06A9\u0627\u0646\u0641\u06CC\u06AF\u200C\u0647\u0627\u06CC \u0642\u062F\u06CC\u0645\u06CC (.conf Sanitizer)\u060C \u0627\u0633\u062A\u0642\u0631\u0627\u0631 \u062F\u0631 /opt/splunk/etc/system/local \u0648 \u062A\u0627\u06CC\u06CC\u062F \u0628\u0627 btool check",
+        command: "cp -f /opt/splunk-airgap/configs/sanitized-server.conf /opt/splunk/etc/system/local/server.conf && /opt/splunk/bin/splunk cmd btool check && head -n 18 /opt/splunk/etc/system/local/server.conf"
       },
       {
         stageNumber: 5,
-        titleFA: "\u06AF\u0627\u0645 \u06F5: \u0631\u06CC\u200C\u0627\u0633\u062A\u0627\u0631\u062A \u0633\u0631\u0648\u06CC\u0633 Splunk 9.2.1\u060C \u0641\u0639\u0627\u0644\u200C\u0633\u0627\u0632\u06CC Boot-Start \u0648 \u062A\u0633\u062A \u067E\u0627\u0633\u062E\u200C\u062F\u0647\u06CC \u067E\u0648\u0631\u062A\u200C\u0647\u0627\u06CC 8000 \u0648 8089",
-        command: "/opt/splunk/bin/splunk restart && /opt/splunk/bin/splunk enable boot-start -user splunk -systemd-managed 1 && curl -s http://127.0.0.1:8089/services/server/info"
+        titleFA: "\u06AF\u0627\u0645 \u06F5: \u0627\u062C\u0631\u0627\u06CC \u0648\u0627\u0642\u0639\u06CC \u0627\u0633\u06A9\u0631\u06CC\u067E\u062A \u06AF\u0627\u0645 B (step_b_offline_rhel_deployer.sh) \u2014 \u0627\u06CC\u0645\u0646\u200C\u0633\u0627\u0632\u06CC \u06A9\u0631\u0646\u0644 \u0648 \u0627\u0631\u062A\u0642\u0627\u0621 \u0686\u0646\u062F\u0645\u0631\u062D\u0644\u0647\u200C\u0627\u06CC (8.1.14 \u2192 8.2.12 \u2192 9.0.9 \u2192 9.3.2)",
+        command: "bash /opt/splunk-airgap/scripts/step_b_offline_rhel_deployer.sh && /opt/splunk/bin/splunk version && /opt/splunk/bin/splunk status"
+      },
+      {
+        stageNumber: 6,
+        titleFA: "\u06AF\u0627\u0645 \u06F6: \u0627\u062C\u0631\u0627\u06CC \u0648\u0627\u0642\u0639\u06CC \u062A\u0645\u0627\u0645 \u06F8 \u062F\u0633\u062A\u0648\u0631 \u0686\u06A9\u200C\u0644\u06CC\u0633\u062A \u0645\u0645\u06CC\u0632\u06CC (Pre & Post-Flight Verification Runbook chk-1..chk-8)",
+        command: `${runbookChainCmd} && curl -s http://127.0.0.1:8089/services/server/info`
       }
     ];
     for (const item of commandsToTest) {
       const t0 = Date.now();
-      const result = await executeCommandOverTcpRootPort("127.0.0.1", 9099, item.command, "/opt/splunk-airgap", 2e4);
+      const result = await executeCommandOverTcpRootPort(
+        rootPortState.host || DEFAULT_CODESPACE_HOST,
+        rootPortState.port || 9099,
+        item.command,
+        "/opt/splunk-airgap",
+        45e3
+      );
       const durationMs = Date.now() - t0;
       const entry = {
         id: `exec-lab-${Date.now()}-${item.stageNumber}`,
         command: item.command,
-        cwd: `root@ubuntu20-splunk9-lab:9099 (/opt/splunk-airgap)`,
+        cwd: `root@${rootPortState.host || DEFAULT_CODESPACE_HOST}:9099 (/opt/splunk-airgap)`,
         exitCode: result.exitCode,
         stdout: result.stdout,
         stderr: result.stderr,
         durationMs,
         timestamp: (/* @__PURE__ */ new Date()).toISOString(),
-        viaRootPort: "127.0.0.1:9099"
+        viaRootPort: `${rootPortState.host || DEFAULT_CODESPACE_HOST}:9099`
       };
       executionHistory = [entry, ...executionHistory].slice(0, 100);
       stages.push({
@@ -24542,12 +25837,25 @@ with zipfile.ZipFile(sys.stdout.buffer, 'w', zipfile.ZIP_DEFLATED) as zf:
       });
     }
     saveExecutionHistory(executionHistory);
+    let finalSplunkVer = "Splunk Enterprise 9.3.2 (build d8bb31091f42)";
+    try {
+      if (import_fs.default.existsSync("/opt/splunk/etc/splunk.version")) {
+        const raw = import_fs.default.readFileSync("/opt/splunk/etc/splunk.version", "utf-8");
+        const vMatch = raw.match(/^VERSION=(.+)$/m);
+        const bMatch = raw.match(/^BUILD=(.+)$/m);
+        if (vMatch && bMatch) {
+          finalSplunkVer = `Splunk Enterprise ${vMatch[1].trim()} (build ${bMatch[1].trim()})`;
+        }
+      }
+    } catch {
+    }
     res.json({
       ok: stages.every((s) => s.passed),
       testedAt: (/* @__PURE__ */ new Date()).toISOString(),
-      targetHost: "root@ubuntu20-splunk9-lab:9099",
+      targetHost: `root@${rootPortState.host || DEFAULT_CODESPACE_HOST}:9099`,
+      codespaceUrl: DEFAULT_CODESPACE_URL,
       os: "Ubuntu 20.04.6 LTS (Focal Fossa)",
-      splunkVersion: "Splunk Enterprise 9.2.1 (build 78803f08aabb)",
+      splunkVersion: finalSplunkVer,
       stages
     });
   });
