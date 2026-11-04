@@ -23,10 +23,15 @@ export const RunbookChecklistView: React.FC<RunbookChecklistViewProps> = ({
       const res = await fetch('/api/terminal/exec', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ command: verifyCommand, workingDir: 'install_stage' }),
+        body: JSON.stringify({
+          command: verifyCommand,
+          workingDir: 'install_stage',
+          stepContextFA: `تست ممیزی چک‌لیست (${id.toUpperCase()})`,
+        }),
       });
       if (res.ok) {
         const data = await res.json();
+        window.dispatchEvent(new CustomEvent('man7:terminal-exec', { detail: data }));
         setLiveOutputs((prev) => ({
           ...prev,
           [id]: {

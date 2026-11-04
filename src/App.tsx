@@ -21,9 +21,12 @@ import { RunbookChecklistView } from './components/RunbookChecklistView';
 import { LinuxTerminalAndDepotView } from './components/LinuxTerminalAndDepotView';
 import { VisualGuideView } from './components/VisualGuideView';
 import { GitHubSyncModal } from './components/GitHubSyncModal';
-import { PlugZap, BookOpen, ArrowLeft, Github, Download } from 'lucide-react';
+import { StepByStepWizardView } from './components/StepByStepWizardView';
+import { CodespaceLiveTerminalDock } from './components/CodespaceLiveTerminalDock';
+import { PlugZap, BookOpen, ArrowLeft, Github, Download, Sparkles, CheckCircle2 } from 'lucide-react';
 
 export type ActiveModule =
+  | 'step_wizard'
   | 'visual_guide'
   | 'linux_terminal'
   | 'upgrade_path'
@@ -32,7 +35,12 @@ export type ActiveModule =
   | 'config_sanitizer';
 
 export default function App() {
-  const [activeModule, setActiveModule] = useState<ActiveModule>('upgrade_path');
+  const [activeModule, setActiveModule] = useState<ActiveModule>('step_wizard');
+  const [wizardCompletedBanner, setWizardCompletedBanner] = useState<boolean>(false);
+  const [wizardStepTitle, setWizardStepTitle] = useState<string>('۱. اتصال پورت Root به Codespace');
+  const [wizardStepExplain, setWizardStepExplain] = useState<string>(
+    'بررسی دسترسی Root (UID=0)، نام هاست سرور Codespace و ساخت دایرکتوری‌های استقرار در /opt/splunk-airgap'
+  );
   const [isGithubModalOpen, setIsGithubModalOpen] = useState<boolean>(false);
   const [sourceVersion, setSourceVersion] = useState<SplunkVersion>('8.1.14');
 
@@ -152,8 +160,20 @@ echo "MAN7 Offline Suite extracted to ./man7-offline-suite/"
           </span>
         </a>
 
-        {/* Zone 2: 4 Sequential Steps (First Calculate -> Hardening -> Bundle & Server Upload -> Config Sanitizer) */}
+        {/* Zone 2: Wizard + 4 Sequential Steps */}
         <nav aria-label="گام‌های چهارگانه محاسبه و استقرار" className="hidden xl:flex items-center gap-4 text-xs font-medium text-slate-400">
+          <button
+            type="button"
+            onClick={() => setActiveModule('step_wizard')}
+            className={`py-1 transition-colors whitespace-nowrap shrink-0 border-b-2 flex items-center gap-1 ${
+              activeModule === 'step_wizard'
+                ? 'text-sky-400 border-sky-400 font-bold'
+                : 'border-transparent text-sky-300 hover:text-sky-200'
+            }`}
+          >
+            <Sparkles className="w-3.5 h-3.5" />
+            <span>ویزارد گام‌به‌گام (۱۰ ریزمرحله)</span>
+          </button>
           <button
             type="button"
             onClick={() => setActiveModule('upgrade_path')}
@@ -264,9 +284,21 @@ echo "MAN7 Offline Suite extracted to ./man7-offline-suite/"
             </p>
           </div>
 
-          {/* Separate Bar: Right = 4 Sequential Calculation/Deployment Steps | Left = Separate Standalone Tools */}
+          {/* Separate Bar: Right = Wizard + 4 Sequential Calculation/Deployment Steps | Left = Separate Standalone Tools */}
           <div className="flex flex-wrap items-center justify-between gap-3 mt-6">
             <div className="flex flex-wrap items-center gap-1 p-1 bg-slate-900 border border-slate-800 rounded-lg">
+              <button
+                type="button"
+                onClick={() => setActiveModule('step_wizard')}
+                className={`px-3 py-1.5 text-xs font-semibold rounded-md flex items-center gap-1.5 whitespace-nowrap shrink-0 ${
+                  activeModule === 'step_wizard'
+                    ? 'bg-sky-400 text-slate-950 font-bold'
+                    : 'text-sky-300 hover:bg-slate-800'
+                }`}
+              >
+                <Sparkles className="w-3.5 h-3.5" />
+                <span>ویزارد گام‌به‌گام (۱۰ ریزمرحله)</span>
+              </button>
               <button
                 type="button"
                 onClick={() => setActiveModule('upgrade_path')}
@@ -386,7 +418,85 @@ echo "MAN7 Offline Suite extracted to ./man7-offline-suite/"
           </div>
         </section>
 
+        {/* Sleek Persistent Live Codespace Terminal Mirror Panel (Always visible across every step!) */}
+        <CodespaceLiveTerminalDock
+          currentStepTitleFA={
+            activeModule === 'step_wizard'
+              ? wizardStepTitle
+              : activeModule === 'upgrade_path'
+              ? 'گام ۱ سامانه: محاسبه ایستگاه‌های ارتقاء و پکیج‌های RPM'
+              : activeModule === 'rhel_hardening'
+              ? 'گام ۲ سامانه: ایمن‌سازی کرنل لینوکس (THP=never, ulimits, SELinux)'
+              : activeModule === 'airgap_bundle'
+              ? 'گام ۳ سامانه: تولید اسکریپت‌های گام A و B و آپلود مستقیم روی سرور'
+              : activeModule === 'config_sanitizer'
+              ? 'گام ۴ سامانه: پالایش کانفیگ‌های قدیمی (.conf) و اجرای ۸ تست چک‌لیست'
+              : activeModule === 'linux_terminal'
+              ? 'کنسول کامل آزمایشگاه Ubuntu 20.04 + Splunk 9'
+              : 'راهنمای تصویری معماری آفلاین'
+          }
+          currentStepExplainFA={
+            activeModule === 'step_wizard'
+              ? wizardStepExplain
+              : activeModule === 'upgrade_path'
+              ? `محاسبه زنجیره ارتقاء از Splunk ${sourceVersion} به ${targetVersion} (${upgradePlan.hops.map((h) => h.version).join(' -> ')})`
+              : activeModule === 'rhel_hardening'
+              ? `پیکربندی کرنل ${targetRhel} با LimitNOFILE=${syncedHardening.nofileLimit} و غیرفعال‌سازی Transparent Huge Pages`
+              : activeModule === 'airgap_bundle'
+              ? 'آماده‌سازی اسکریپت‌های بکاپ، گام A و گام B در مسیر /opt/splunk-airgap/scripts و اجرای واقعی آن‌ها روی سرور'
+              : activeModule === 'config_sanitizer'
+              ? 'حذف Python 2 و MMAPv1 از فایل‌های کانفیگ و اجرای زنده ۸ دستور ممیزی Runbook در ترمینال Codespace'
+              : 'مشاهده و اجرای زنده دستورات روی سرور آزمایشگاه از طریق پورت Root (9099)'
+          }
+          onOpenFullTerminalTab={() => setActiveModule('linux_terminal')}
+        />
+
+        {wizardCompletedBanner && activeModule !== 'step_wizard' && (
+          <div className="p-4 rounded-xl bg-emerald-950/40 border border-emerald-500/40 flex flex-wrap items-center justify-between gap-3 text-xs text-emerald-200">
+            <div className="flex items-center gap-2">
+              <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+              <span>
+                <strong>ویزارد ۱۰ مرحله‌ای با موفقیت تکمیل شد:</strong> اکنون در محیط کامل سامانه مهندسی MAN7 هستید و تمام تنظیمات مسیر ارتقاء ({sourceVersion} → {targetVersion})، ایمن‌سازی کرنل و اسکریپت‌های تست‌شده روی سرور آماده بهره‌برداری هستند.
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setActiveModule('step_wizard')}
+              className="px-3 py-1 rounded bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 font-semibold transition-colors"
+            >
+              بازگشت به ویزارد گام‌به‌گام
+            </button>
+          </div>
+        )}
+
         {/* Active Engineering Module */}
+        {activeModule === 'step_wizard' && (
+          <StepByStepWizardView
+            sourceVersion={sourceVersion}
+            setSourceVersion={setSourceVersion}
+            targetVersion={targetVersion}
+            setTargetVersion={setTargetVersion}
+            targetRhel={targetRhel}
+            setTargetRhel={setTargetRhel}
+            serverRole={serverRole}
+            setServerRole={setServerRole}
+            packageFormat={packageFormat}
+            setPackageFormat={setPackageFormat}
+            hardening={hardening}
+            setHardening={setHardening}
+            plan={upgradePlan}
+            extraRpms={extraRpms}
+            onStepContextChange={(titleFA, explainFA) => {
+              setWizardStepTitle(titleFA);
+              setWizardStepExplain(explainFA);
+            }}
+            onFinishWizardToFullSystem={() => {
+              setWizardCompletedBanner(true);
+              setActiveModule('upgrade_path');
+            }}
+          />
+        )}
+
         {activeModule === 'visual_guide' && (
           <VisualGuideView
             onNavigateModule={(target) => setActiveModule(target)}

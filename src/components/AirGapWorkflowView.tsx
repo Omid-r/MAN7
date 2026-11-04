@@ -442,10 +442,18 @@ if __name__ == "__main__":
       const res = await fetch('/api/terminal/exec', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ command: cmd, workingDir: 'install_stage' }),
+        body: JSON.stringify({
+          command: cmd,
+          workingDir: 'install_stage',
+          stepContextFA:
+            mode === 'verify'
+              ? 'گام ۳: بررسی فایل‌های آپلودشده و کرنل سرور'
+              : 'گام ۳: اجرای کامل اسکریپت‌های بکاپ + گام A + استقرار گام B',
+        }),
       });
       if (res.ok) {
         const data = await res.json();
+        window.dispatchEvent(new CustomEvent('man7:terminal-exec', { detail: data }));
         await fetchServerFilesAndPort();
         setTestOutput({
           command: data.command,

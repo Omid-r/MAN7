@@ -23844,6 +23844,7 @@ for (const sub of ["splunk_bins", "rpms", "configs", "scripts"]) {
   }
 }
 var HISTORY_FILE = import_path.default.join(DEPOT_ROOT, "logs", "execution_history.json");
+var CODESPACE_LIVE_LOG_FILE = "/var/log/man7-codespace-terminal.log";
 function loadExecutionHistory() {
   try {
     if (import_fs.default.existsSync(HISTORY_FILE)) {
@@ -23861,6 +23862,34 @@ function saveExecutionHistory(entries) {
   }
 }
 var executionHistory = loadExecutionHistory();
+function recordAndEchoCodespaceTerminal(entry) {
+  executionHistory = [entry, ...executionHistory].slice(0, 100);
+  saveExecutionHistory(executionHistory);
+  const banner = [
+    ``,
+    `\x1B[1;36m\u250C\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2510\x1B[0m`,
+    `\x1B[1;36m\u2502 [MAN7 CODESPACE LIVE TERMINAL] ${entry.stepContextFA || "\u0627\u062C\u0631\u0627\u06CC \u062F\u0633\u062A\u0648\u0631 \u0645\u0633\u062A\u0642\u06CC\u0645 \u0631\u0648\u06CC \u0622\u0632\u0645\u0627\u06CC\u0634\u06AF\u0627\u0647"}\x1B[0m`,
+    `\x1B[1;32mroot@${DEFAULT_CODESPACE_HOST}:/opt/splunk-airgap#\x1B[0m ${entry.command}`,
+    entry.stdout ? entry.stdout.trimEnd() : "",
+    entry.stderr ? `\x1B[1;31m${entry.stderr.trimEnd()}\x1B[0m` : "",
+    `\x1B[1;33m\u2514\u2500> [EXIT CODE: ${entry.exitCode} | DURATION: ${entry.durationMs} ms | ${entry.timestamp}]\x1B[0m`,
+    ``
+  ].filter((line) => line !== "").join("\n");
+  process.stdout.write(banner + "\n");
+  try {
+    import_fs.default.appendFileSync(
+      CODESPACE_LIVE_LOG_FILE,
+      `================================================================================
+[${entry.timestamp}] STEP: ${entry.stepContextFA || "Direct Execution"}
+root@${DEFAULT_CODESPACE_HOST}:/opt/splunk-airgap# ${entry.command}
+${entry.stdout || ""}${entry.stderr ? "\nSTDERR: " + entry.stderr : ""}
+--> EXIT CODE: ${entry.exitCode} (${entry.durationMs} ms)
+`,
+      "utf-8"
+    );
+  } catch {
+  }
+}
 var localRootTcpServer = null;
 var localRootDaemonPort = 9099;
 function startLocalRootPortListener(listenPort) {
@@ -24838,7 +24867,7 @@ async function startServer() {
     res.json({ ok: true, state: rootPortState });
   });
   app.post("/api/terminal/exec", async (req, res) => {
-    const { command, workingDir } = req.body;
+    const { command, workingDir, stepContextFA } = req.body;
     if (!command || typeof command !== "string" || !command.trim()) {
       res.status(400).json({ error: "\u062F\u0633\u062A\u0648\u0631 \u0634\u0644 \u0645\u0639\u062A\u0628\u0631 \u0648\u0627\u0631\u062F \u0646\u0634\u062F\u0647 \u0627\u0633\u062A." });
       return;
@@ -24863,10 +24892,10 @@ async function startServer() {
         stderr: result.stderr,
         durationMs,
         timestamp: (/* @__PURE__ */ new Date()).toISOString(),
-        viaRootPort: `${rootPortState.host}:${rootPortState.port}`
+        viaRootPort: `${rootPortState.host}:${rootPortState.port}`,
+        stepContextFA: stepContextFA || "\u0627\u062C\u0631\u0627\u06CC \u062F\u0633\u062A\u0648\u0631 \u062F\u0631 \u062A\u0631\u0645\u06CC\u0646\u0627\u0644 Codespace"
       };
-      executionHistory = [entry, ...executionHistory].slice(0, 100);
-      saveExecutionHistory(executionHistory);
+      recordAndEchoCodespaceTerminal(entry);
       res.json(entry);
       return;
     }
@@ -25823,9 +25852,10 @@ with zipfile.ZipFile(sys.stdout.buffer, 'w', zipfile.ZIP_DEFLATED) as zf:
         stderr: result.stderr,
         durationMs,
         timestamp: (/* @__PURE__ */ new Date()).toISOString(),
-        viaRootPort: `${rootPortState.host || DEFAULT_CODESPACE_HOST}:9099`
+        viaRootPort: `${rootPortState.host || DEFAULT_CODESPACE_HOST}:9099`,
+        stepContextFA: item.titleFA
       };
-      executionHistory = [entry, ...executionHistory].slice(0, 100);
+      recordAndEchoCodespaceTerminal(entry);
       stages.push({
         stageNumber: item.stageNumber,
         titleFA: item.titleFA,
@@ -25836,7 +25866,6 @@ with zipfile.ZipFile(sys.stdout.buffer, 'w', zipfile.ZIP_DEFLATED) as zf:
         passed: result.exitCode === 0
       });
     }
-    saveExecutionHistory(executionHistory);
     let finalSplunkVer = "Splunk Enterprise 9.3.2 (build d8bb31091f42)";
     try {
       if (import_fs.default.existsSync("/opt/splunk/etc/splunk.version")) {

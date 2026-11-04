@@ -48,6 +48,7 @@ export interface ExecutionLogEntry {
   durationMs: number;
   timestamp: string;
   viaRootPort?: string;
+  stepContextFA?: string;
 }
 
 export interface RootPortConfigState {
@@ -65,6 +66,7 @@ export interface RootPortConfigState {
 }
 
 const HISTORY_FILE = path.join(DEPOT_ROOT, 'logs', 'execution_history.json');
+const CODESPACE_LIVE_LOG_FILE = '/var/log/man7-codespace-terminal.log';
 
 function loadExecutionHistory(): ExecutionLogEntry[] {
   try {
@@ -87,6 +89,41 @@ function saveExecutionHistory(entries: ExecutionLogEntry[]) {
 }
 
 let executionHistory: ExecutionLogEntry[] = loadExecutionHistory();
+
+function recordAndEchoCodespaceTerminal(entry: ExecutionLogEntry) {
+  executionHistory = [entry, ...executionHistory].slice(0, 100);
+  saveExecutionHistory(executionHistory);
+
+  const banner = [
+    ``,
+    `\x1b[1;36m┌──────────────────────────────────────────────────────────────────────────────┐\x1b[0m`,
+    `\x1b[1;36m│ [MAN7 CODESPACE LIVE TERMINAL] ${entry.stepContextFA || 'اجرای دستور مستقیم روی آزمایشگاه'}\x1b[0m`,
+    `\x1b[1;32mroot@${DEFAULT_CODESPACE_HOST}:/opt/splunk-airgap#\x1b[0m ${entry.command}`,
+    entry.stdout ? entry.stdout.trimEnd() : '',
+    entry.stderr ? `\x1b[1;31m${entry.stderr.trimEnd()}\x1b[0m` : '',
+    `\x1b[1;33m└─> [EXIT CODE: ${entry.exitCode} | DURATION: ${entry.durationMs} ms | ${entry.timestamp}]\x1b[0m`,
+    ``,
+  ]
+    .filter((line) => line !== '')
+    .join('\n');
+
+  // Print directly to the active Codespace terminal stdout
+  process.stdout.write(banner + '\n');
+
+  try {
+    fs.appendFileSync(
+      CODESPACE_LIVE_LOG_FILE,
+      `================================================================================\n` +
+        `[${entry.timestamp}] STEP: ${entry.stepContextFA || 'Direct Execution'}\n` +
+        `root@${DEFAULT_CODESPACE_HOST}:/opt/splunk-airgap# ${entry.command}\n` +
+        `${entry.stdout || ''}${entry.stderr ? '\nSTDERR: ' + entry.stderr : ''}\n` +
+        `--> EXIT CODE: ${entry.exitCode} (${entry.durationMs} ms)\n`,
+      'utf-8'
+    );
+  } catch {
+    // ignore
+  }
+}
 
 // Built-in TCP Root Listener Daemon (so local or loopback port tests work immediately out-of-the-box)
 let localRootTcpServer: net.Server | null = null;
@@ -1163,7 +1200,11 @@ async function startServer() {
 
   // 2. Live Linux Shell Command Execution Engine (Executes via configured Root Port or direct local /bin/bash)
   app.post('/api/terminal/exec', async (req, res) => {
-    const { command, workingDir } = req.body as { command?: string; workingDir?: string };
+    const { command, workingDir, stepContextFA } = req.body as {
+      command?: string;
+      workingDir?: string;
+      stepContextFA?: string;
+    };
     if (!command || typeof command !== 'string' || !command.trim()) {
       res.status(400).json({ error: 'دستور شل معتبر وارد نشده است.' });
       return;
@@ -1201,9 +1242,9 @@ async function startServer() {
         durationMs,
         timestamp: new Date().toISOString(),
         viaRootPort: `${rootPortState.host}:${rootPortState.port}`,
+        stepContextFA: stepContextFA || 'اجرای دستور در ترمینال Codespace',
       };
-      executionHistory = [entry, ...executionHistory].slice(0, 100);
-      saveExecutionHistory(executionHistory);
+      recordAndEchoCodespaceTerminal(entry);
       res.json(entry);
       return;
     }
@@ -2396,8 +2437,9 @@ with zipfile.ZipFile(sys.stdout.buffer, 'w', zipfile.ZIP_DEFLATED) as zf:
         durationMs,
         timestamp: new Date().toISOString(),
         viaRootPort: `${rootPortState.host || DEFAULT_CODESPACE_HOST}:9099`,
+        stepContextFA: item.titleFA,
       };
-      executionHistory = [entry, ...executionHistory].slice(0, 100);
+      recordAndEchoCodespaceTerminal(entry);
       stages.push({
         stageNumber: item.stageNumber,
         titleFA: item.titleFA,
@@ -2408,8 +2450,6 @@ with zipfile.ZipFile(sys.stdout.buffer, 'w', zipfile.ZIP_DEFLATED) as zf:
         passed: result.exitCode === 0,
       });
     }
-
-    saveExecutionHistory(executionHistory);
 
     let finalSplunkVer = 'Splunk Enterprise 9.3.2 (build d8bb31091f42)';
     try {
