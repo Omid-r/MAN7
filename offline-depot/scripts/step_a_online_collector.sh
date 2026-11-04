@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # ==============================================================================
 # MAN7 | STEP A: INTERNET-CONNECTED HARVESTER MACHINE SCRIPT
-# Target OS: Ubuntu 20.04 LTS | Server Role: INDEXER
+# Target OS: RHEL 9.4 | Server Role: INDEXER
 # Purpose: Downloads all RHEL RPM dependencies + transitive libs & Splunk hop binaries
 #          and packages a verified, self-contained Air-Gapped bundle (.tar.gz).
 # ==============================================================================
@@ -11,13 +11,13 @@ BUNDLE_ROOT="/tmp/man7-airgap-bundle"
 RPM_DIR="${BUNDLE_ROOT}/rpms"
 SPLUNK_BIN_DIR="${BUNDLE_ROOT}/splunk_bins"
 MANIFEST_FILE="${BUNDLE_ROOT}/SHA256SUMS.manifest"
-OUTPUT_ARCHIVE="/tmp/man7-offline-kit-ubuntu-20.04-lts.tar.gz"
+OUTPUT_ARCHIVE="/tmp/man7-offline-kit-rhel-9.4.tar.gz"
 
 echo "[1/5] Preparing clean staging workspace at ${BUNDLE_ROOT}..."
 rm -rf "${BUNDLE_ROOT}"
 mkdir -p "${RPM_DIR}" "${SPLUNK_BIN_DIR}"
 
-echo "[2/5] Resolving and downloading Ubuntu 20.04 LTS prerequisite RPMs and ALL transitive dependencies..."
+echo "[2/5] Resolving and downloading RHEL 9.4 prerequisite RPMs and ALL transitive dependencies..."
 if command -v dnf >/dev/null 2>&1; then
   dnf download --resolve --alldeps --destdir="${RPM_DIR}" \
     glibc glibc-common libxcrypt-compat policycoreutils policycoreutils-python-utils selinux-policy-targeted tuned numactl chrony firewalld rsync tar openssl lsof || true
@@ -33,7 +33,7 @@ for pkg in glibc glibc-common libxcrypt-compat policycoreutils policycoreutils-p
       cp -f "/opt/splunk-airgap/rpms/${pkg}-1.0.el9.x86_64.rpm" "${RPM_DIR}/"
     else
       printf "RPM_PACKAGE_BINARY:%s:OS=%s
-" "${pkg}" "Ubuntu 20.04 LTS" > "${RPM_DIR}/${pkg}-1.0.el9.x86_64.rpm"
+" "${pkg}" "RHEL 9.4" > "${RPM_DIR}/${pkg}-1.0.el9.x86_64.rpm"
     fi
   fi
 done

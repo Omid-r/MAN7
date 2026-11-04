@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 # ==============================================================================
 # MAN7 | STEP B: AIR-GAPPED TARGET RHEL SERVER HARDENING & AUTO-MIGRATOR
-# Target OS: Ubuntu 20.04 LTS | Role: INDEXER
+# Target OS: RHEL 9.4 | Role: INDEXER
 # Strictly Offline Execution — Zero Internet Dependency
 # ==============================================================================
 set -euo pipefail
 
-BUNDLE_ARCHIVE="/var/tmp/man7-offline-kit-ubuntu-20.04-lts.tar.gz"
+BUNDLE_ARCHIVE="/var/tmp/man7-offline-kit-rhel-9.4.tar.gz"
 LEGACY_CONFIG_ARCHIVE="/var/tmp/splunk-legacy-configs-and-state.tar.gz"
 EXTRACT_ROOT="/opt/splunk-airgap"
 SPLUNK_HOME="/opt/splunk"
@@ -45,7 +45,7 @@ if [ ! -f "${EXTRACT_ROOT}/SHA256SUMS.manifest" ]; then
 fi
 (cd "${EXTRACT_ROOT}" && sha256sum -c SHA256SUMS.manifest)
 
-echo "[2/8] Offline Installation of Ubuntu 20.04 LTS RPM Prerequisites..."
+echo "[2/8] Offline Installation of RHEL 9.4 RPM Prerequisites..."
 if command -v rpm >/dev/null 2>&1 && ls "${EXTRACT_ROOT}/rpms/"*.rpm >/dev/null 2>&1; then
   rpm -Uvh --replacepkgs --oldpackage "${EXTRACT_ROOT}/rpms/"*.rpm || echo "  -> Offline RPMs verified in local package database."
 else
@@ -193,5 +193,5 @@ else
 fi
 
 echo "=============================================================================="
-echo "MIGRATION & HARDENING COMPLETE: Splunk 9.3.2 is active on Ubuntu 20.04 LTS."
+echo "MIGRATION & HARDENING COMPLETE: Splunk 9.3.2 is active on RHEL 9.4."
 echo "=============================================================================="
