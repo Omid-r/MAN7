@@ -2120,7 +2120,8 @@ with zipfile.ZipFile(sys.stdout.buffer, 'w', zipfile.ZIP_DEFLATED) as zf:
       // Connecting credentials must not implicitly write to a repository.
       res.json({
         ok: true,
-        user: githubSession,        syncResult: null,
+        user: publicGithubSession(githubSession),
+        syncResult: null,
       });
     } catch (err) {
       res.status(500).json({ error: (err as Error).message });
