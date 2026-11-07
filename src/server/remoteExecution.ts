@@ -67,8 +67,11 @@ function parseTargets(): RemoteTarget[] {
 }
 
 function assertProtectedFile(filePath: string, label: string, privateKey: boolean): void {
-  const stat = fs.statSync(filePath);
-  if (!stat.isFile()) throw new Error(`${label} must be a regular file.`);
+  const stat = fs.lstatSync(filePath);
+  if (!stat.isFile() || stat.isSymbolicLink()) throw new Error(`${label} must be a regular, non-symlink file.`);
+  if (typeof process.getuid === 'function' && stat.uid !== process.getuid()) {
+    throw new Error(`${label} must be owned by the MAN7 service account.`);
+  }
   const mode = stat.mode & 0o777;
   if (privateKey ? (mode & 0o077) !== 0 : (mode & 0o022) !== 0) {
     throw new Error(privateKey
@@ -83,13 +86,17 @@ function appendAudit(entry: Record<string, unknown>): void {
     throw new Error('MAN7_SSH_AUDIT_LOG must be configured as an absolute path.');
   }
   const parent = path.dirname(auditPath);
-  const parentStat = fs.statSync(parent);
-  if (!parentStat.isDirectory() || ((parentStat.mode & 0o022) !== 0)) {
+  const parentStat = fs.lstatSync(parent);
+  if (!parentStat.isDirectory() || parentStat.isSymbolicLink() ||
+      (typeof process.getuid === 'function' && parentStat.uid !== process.getuid()) ||
+      ((parentStat.mode & 0o022) !== 0)) {
     throw new Error('SSH audit log directory must exist and must not be group/world writable.');
   }
   if (fs.existsSync(auditPath)) {
-    const existing = fs.statSync(auditPath);
-    if (!existing.isFile() || (existing.mode & 0o077) !== 0) {
+    const existing = fs.lstatSync(auditPath);
+    if (!existing.isFile() || existing.isSymbolicLink() ||
+        (typeof process.getuid === 'function' && existing.uid !== process.getuid()) ||
+        (existing.mode & 0o077) !== 0) {
       throw new Error('SSH audit log must be a regular file with mode 600 or stricter.');
     }
   }
@@ -184,7 +191,7 @@ export function createRemoteExecutionRouter(): express.Router {
     }
 
     let target: RemoteTarget | undefined;
-    let startedAt = Date.now();
+    const startedAt = Date.now();
     try {
       const targets = parseTargets();
       target = targets.find((candidate) => candidate.id === targetId);
