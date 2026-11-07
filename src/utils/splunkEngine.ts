@@ -705,7 +705,8 @@ for pkg in ${rpmNames}; do
     if [ -f "/opt/splunk-airgap/rpms/\${pkg}-1.0.el9.x86_64.rpm" ]; then
       cp -f "/opt/splunk-airgap/rpms/\${pkg}-1.0.el9.x86_64.rpm" "\${RPM_DIR}/"
     else
-      printf "RPM_PACKAGE_BINARY:%s:OS=%s\n" "\${pkg}" "${hardening.targetRhel}" > "\${RPM_DIR}/\${pkg}-1.0.el9.x86_64.rpm"
+      echo "ERROR: Required RPM '${pkg}' was not downloaded or found in trusted cache." >&2
+      exit 1
     fi
   fi
 done
@@ -723,13 +724,11 @@ if [ -f "/opt/splunk-airgap/splunk_bins/${hop.packageFileName}" ]; then
   cp -f "/opt/splunk-airgap/splunk_bins/${hop.packageFileName}" "\${SPLUNK_BIN_DIR}/${hop.packageFileName}"
 elif [ ! -f "\${SPLUNK_BIN_DIR}/${hop.packageFileName}" ]; then
   echo "  -> Checking local cache or fetching ${hop.packageFileName}..."
-  if ! curl -fsSL --connect-timeout 4 --max-time 10 -o "\${SPLUNK_BIN_DIR}/${hop.packageFileName}" "https://download.splunk.com/products/splunk/releases/${hop.version}/linux/${hop.packageFileName}" 2>/dev/null; then
-    mkdir -p "/tmp/splunk-pkg-build-${hop.version}/splunk/etc" "/tmp/splunk-pkg-build-${hop.version}/splunk/bin"
-    printf "VERSION=${hop.version}\\nBUILD=${SPLUNK_VERSIONS_METADATA[hop.version].buildHash}\\nPRODUCT=splunk\\nPLATFORM=Linux-x86_64\\n" > "/tmp/splunk-pkg-build-${hop.version}/splunk/etc/splunk.version"
-    [ -f /opt/splunk/bin/splunk ] && cp -f /opt/splunk/bin/splunk "/tmp/splunk-pkg-build-${hop.version}/splunk/bin/splunk"
-    tar -czf "\${SPLUNK_BIN_DIR}/${hop.packageFileName}" -C "/tmp/splunk-pkg-build-${hop.version}" splunk
-    rm -rf "/tmp/splunk-pkg-build-${hop.version}"
+  if ! curl -fsSL --connect-timeout 10 --max-time 600 -o "\${SPLUNK_BIN_DIR}/${hop.packageFileName}" "https://download.splunk.com/products/splunk/releases/${hop.version}/linux/${hop.packageFileName}"; then
+    echo "ERROR: Official Splunk artifact download failed; refusing placeholder generation." >&2
+    exit 1
   fi
+  tar -tzf "\${SPLUNK_BIN_DIR}/${hop.packageFileName}" >/dev/null
 fi`
   )
   .join('\n\n')}
@@ -943,11 +942,9 @@ ${plan.hops
     (hop, i) => `
 # --- HOP ${i + 1}: Upgrading to Splunk ${hop.version} (${hop.roleInPath.toUpperCase()}) ---
 echo "  => Installing Hop ${i + 1}: Splunk ${hop.version} (${hop.packageFileName})..."
-if [ ! -f "\${EXTRACT_ROOT}/splunk_bins/${hop.packageFileName}" ]; then
-  mkdir -p "/tmp/splunk-hop-${hop.version}/splunk/etc"
-  printf "VERSION=${hop.version}\\nBUILD=${SPLUNK_VERSIONS_METADATA[hop.version].buildHash}\\nPRODUCT=splunk\\nPLATFORM=Linux-x86_64\\n" > "/tmp/splunk-hop-${hop.version}/splunk/etc/splunk.version"
-  tar -czf "\${EXTRACT_ROOT}/splunk_bins/${hop.packageFileName}" -C "/tmp/splunk-hop-${hop.version}" splunk
-  rm -rf "/tmp/splunk-hop-${hop.version}"
+if [ ! -s "\${EXTRACT_ROOT}/splunk_bins/${hop.packageFileName}" ]; then
+  echo "ERROR: Required official Splunk package is missing: ${hop.packageFileName}" >&2
+  exit 1
 fi
 ${
   packageFormat === 'tgz'
