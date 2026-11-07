@@ -23,6 +23,7 @@ type PreflightResult = {
 const MAX_OUTPUT_BYTES = 64 * 1024;
 const SSH_TIMEOUT_MS = 15_000;
 const REMOTE_PREFLIGHT_COMMAND = 'man7-remote-agent preflight';
+const activeTargets = new Set<string>();
 
 function parseTargets(): RemoteTarget[] {
   const raw = process.env.MAN7_SSH_TARGETS_JSON;
@@ -199,6 +200,11 @@ export function createRemoteExecutionRouter(): express.Router {
         res.status(404).json({ error: 'SSH target is not present in the server-side allowlist.' });
         return;
       }
+      if (activeTargets.has(target.id)) {
+        res.status(409).json({ error: 'A preflight is already running for this target.' });
+        return;
+      }
+      activeTargets.add(target.id);
       if (process.getuid && process.getuid() === 0) {
         throw new Error('MAN7 must run as a dedicated non-root service account.');
       }
@@ -239,6 +245,8 @@ export function createRemoteExecutionRouter(): express.Router {
         return;
       }
       res.status(502).json({ error: message });
+    } finally {
+      if (target) activeTargets.delete(target.id);
     }
   });
 
