@@ -58,7 +58,7 @@ function parseTargets(): RemoteTarget[] {
       throw new Error(`SSH target ${id} has an invalid port.`);
     }
     for (const [label, file] of [['identityFile', identityFile], ['knownHostsFile', knownHostsFile]] as const) {
-      if (typeof file !== 'string' || !path.isAbsolute(file) || /[\\0\\r\\n]/.test(file) ||
+      if (typeof file !== 'string' || !path.isAbsolute(file) || /[\0\r\n]/.test(file) ||
           (label === 'knownHostsFile' && file.includes(','))) {
         throw new Error(`SSH target ${id} requires an absolute ${label} path.`);
       }
