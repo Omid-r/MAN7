@@ -594,7 +594,9 @@ function provisionUbuntu20Splunk9Lab(cleanPrevious = true) {
         'DISTRIB_ID=Ubuntu\nDISTRIB_RELEASE=20.04\nDISTRIB_CODENAME=focal\nDISTRIB_DESCRIPTION="Ubuntu 20.04.6 LTS"\n',
         'utf-8'
       );
-    } catch {      // ignore if read-only in restricted environments    }
+    } catch {
+      // ignore if read-only in restricted environments
+    }
 
     // 2. Create /opt/splunk directory hierarchy for Splunk Enterprise 9.2.1
     const splunkDirs = [
