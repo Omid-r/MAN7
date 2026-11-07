@@ -1666,6 +1666,12 @@ with zipfile.ZipFile(sys.stdout.buffer, 'w', zipfile.ZIP_DEFLATED) as zf:
   }
 
   let githubSession: GitHubAuthSession | null = loadGithubSession();
+  function publicGithubSession(session: GitHubAuthSession | null) {
+    if (!session) return null;
+    const { accessToken: _accessToken, ...safeSession } = session;
+    return safeSession;
+  }
+
 
   function saveGithubSession(session: GitHubAuthSession | null) {
     githubSession = session;
@@ -2130,7 +2136,7 @@ with zipfile.ZipFile(sys.stdout.buffer, 'w', zipfile.ZIP_DEFLATED) as zf:
       branch,
       privateRepo,
     });
-    res.json({ ok: true, user: githubSession });
+    res.json({ ok: true, user: publicGithubSession(githubSession) });
   });
 
   app.get('/api/github/status', (req, res) => {
