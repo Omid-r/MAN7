@@ -22,6 +22,57 @@ const DEPOT_ROOT = path.join(ROOT_DIR, 'offline-depot');
 const INSTALL_STAGE_ROOT = '/opt/splunk-airgap';
 const VAR_TMP_ROOT = '/var/tmp';
 
+const ADMIN_SESSION_COOKIE = 'man7_admin_session';
+const ADMIN_SESSION_TTL_MS = 30 * 60 * 1000;
+const adminSessions = new Map<string, number>();
+const failedAdminLogins = new Map<string, { count: number; windowStartedAt: number }>();
+
+function readCookie(req: express.Request, name: string): string {
+  const header = req.headers.cookie || '';
+  for (const part of header.split(';')) {
+    const separator = part.indexOf('=');
+    if (separator < 0) continue;
+    if (part.slice(0, separator).trim() === name) {
+      return decodeURIComponent(part.slice(separator + 1).trim());
+    }
+  }
+  return '';
+}
+
+function isSameOriginRequest(req: express.Request): boolean {
+  const origin = req.get('origin');
+  const host = req.get('host');
+  if (!origin || !host) return false;
+  try {
+    const parsed = new URL(origin);
+    return parsed.host === host && parsed.protocol === `${req.protocol}:`;
+  } catch {
+    return false;
+  }
+}
+
+const requireAdminSession: express.RequestHandler = (req, res, next) => {
+  if (!process.env.MAN7_ADMIN_PASSWORD) {
+    res.status(503).json({ error: 'مدیریت امن فعال نیست؛ MAN7_ADMIN_PASSWORD را در محیط سرور تنظیم کنید.' });
+    return;
+  }
+
+  if (!['GET', 'HEAD', 'OPTIONS'].includes(req.method) && !isSameOriginRequest(req)) {
+    res.status(403).json({ error: 'درخواست cross-origin یا بدون Origin رد شد.' });
+    return;
+  }
+
+  const token = readCookie(req, ADMIN_SESSION_COOKIE);
+  const expiresAt = token ? adminSessions.get(token) : undefined;
+  if (!token || !expiresAt || expiresAt <= Date.now()) {
+    if (token) adminSessions.delete(token);
+    res.status(401).json({ error: 'نشست مدیریتی معتبر نیست یا منقضی شده است.' });
+    return;
+  }
+  next();
+};
+
+
 const DEPOT_CATEGORIES = ['splunk_bins', 'rpms', 'configs', 'scripts', 'logs'] as const;
 type DepotCategory = (typeof DEPOT_CATEGORIES)[number];
 
@@ -197,8 +248,7 @@ function startSplunkLabPortListeners() {
   if (splunkMockServers.length > 0) return;
 
   // Port 8000: Splunk Web HTTP endpoint
-  const web8000 = net.createServer((socket) => {    socket.on('data', () => {      const body = JSON.stringify({        product: 'Splunk Enterprise',
-        version: splunkLabVersion,
+  const web8000 = net.createServer((socket) => {    socket.on('data', () => {      const body = JSON.stringify({        product: 'Splunk Enterprise',        version: splunkLabVersion,
         build: splunkLabBuild,
         os: 'Ubuntu 20.04.6 LTS (Focal Fossa)',
         hostname: 'ubuntu20-splunk9-lab',
@@ -397,8 +447,7 @@ for arg in "$@"; do
       ;;  esac
 donemkdir -p "$DESTDIR"
 if [ "\${#PKGS[@]}" -eq 0 ]; then  PKGS=(glibc glibc-common libxcrypt-compat policycoreutils policycoreutils-python-utils selinux-policy-targeted tuned numactl chrony firewalld rsync tar openssl lsof)
-fi
-for pkg in "\${PKGS[@]}"; do
+fifor pkg in "\${PKGS[@]}"; do
   RPM_FILE="\${DESTDIR}/\${pkg}-2.34-100.el9.x86_64.rpm"
   printf "RPM_BINARY_PACKAGE:%s:ARCH=x86_64:SHA256_VERIFIED\\n" "$pkg" > "$RPM_FILE"
   echo "[DNF-Harvester] Downloaded & resolved package: \$(basename "$RPM_FILE")"
@@ -597,8 +646,7 @@ function provisionUbuntu20Splunk9Lab(cleanPrevious = true) {
 
     // 2. Create /opt/splunk directory hierarchy for Splunk Enterprise 9.2.1    const splunkDirs = [
       '/opt/splunk/bin',
-      '/opt/splunk/etc/system/local',
-      '/opt/splunk/etc/apps',
+      '/opt/splunk/etc/system/local',      '/opt/splunk/etc/apps',
       '/opt/splunk/etc/users',
       '/opt/splunk/etc/auth',
       '/opt/splunk/var/log/splunk',
@@ -797,8 +845,7 @@ case "\${CMD}" in
   migrate)    echo "Migrating KV store storage engine to wiredTiger..."
     echo "Storage engine migration to wiredTiger completed successfully."
     ;;
-  enable)
-    echo "Init script installed at /etc/systemd/system/Splunkd.service."
+  enable)    echo "Init script installed at /etc/systemd/system/Splunkd.service."
     echo "Init script is configured to run at boot (systemd-managed=1)."
     ;;
   *)
@@ -997,7 +1044,6 @@ function executeCommandOverTcpRootPort(
 function sanitizeFileName(name: string): string {
   return path.basename(name).replace(/[^a-zA-Z0-9._+-]/g, '_');
 }
-
 async function computeFileSha256(filePath: string): Promise<string> {
   return new Promise((resolve, reject) => {
     const hash = crypto.createHash('sha256');
@@ -1029,6 +1075,78 @@ function resolveTargetInstallPath(category: DepotCategory, safeName: string, cus
 
 async function startServer() {
   const app = express();
+
+  app.get('/login', (_req, res) => {
+    res.type('html').send(`<!doctype html><html lang="fa" dir="rtl"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>ورود مدیر MAN7</title><body style="font-family:system-ui;max-width:420px;margin:12vh auto;padding:24px;background:#0b1220;color:#e5e7eb"><h2>ورود مدیر MAN7</h2><p>رمز مدیریتی تعریف‌شده در محیط سرور را وارد کنید.</p><form id="login"><input id="password" type="password" autocomplete="current-password" required style="box-sizing:border-box;width:100%;padding:12px;margin:12px 0"><button style="padding:10px 18px">ورود امن</button></form><p id="message" role="status"></p><script>document.getElementById('login').addEventListener('submit',async e=>{e.preventDefault();const message=document.getElementById('message');message.textContent='در حال بررسی...';try{const response=await fetch('/api/auth/login',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'same-origin',body:JSON.stringify({password:document.getElementById('password').value})});const data=await response.json();if(!response.ok)throw new Error(data.error||'ورود ناموفق بود');location.replace('/')}catch(error){message.textContent=error.message}})</script></body></html>`);
+  });
+
+  app.post('/api/auth/login', express.json({ limit: '4kb' }), (req, res) => {
+    const configuredPassword = process.env.MAN7_ADMIN_PASSWORD || '';
+    if (!configuredPassword) {
+      res.status(503).json({ error: 'مدیریت امن فعال نیست؛ MAN7_ADMIN_PASSWORD را در محیط سرور تنظیم کنید.' });
+      return;
+    }
+    if (!isSameOriginRequest(req)) {
+      res.status(403).json({ error: 'درخواست ورود cross-origin یا بدون Origin رد شد.' });
+      return;
+    }
+    const ip = req.ip || req.socket.remoteAddress || 'unknown';
+    const now = Date.now();
+    const attempts = failedAdminLogins.get(ip);
+    if (attempts && now - attempts.windowStartedAt < 15 * 60 * 1000 && attempts.count >= 10) {
+      res.status(429).json({ error: 'تعداد تلاش‌های ورود بیش از حد مجاز است؛ ۱۵ دقیقه بعد تلاش کنید.' });
+      return;
+    }
+    const suppliedPassword = typeof req.body?.password === 'string' ? req.body.password : '';
+    const expected = Buffer.from(configuredPassword);
+    const supplied = Buffer.from(suppliedPassword);
+    const valid = supplied.length === expected.length && crypto.timingSafeEqual(supplied, expected);
+    if (!valid) {
+      const current = attempts && now - attempts.windowStartedAt < 15 * 60 * 1000
+        ? attempts
+        : { count: 0, windowStartedAt: now };
+      current.count += 1;
+      failedAdminLogins.set(ip, current);
+      res.status(401).json({ error: 'رمز مدیریتی نادرست است.' });
+      return;
+    }
+    failedAdminLogins.delete(ip);
+    const token = crypto.randomBytes(32).toString('hex');
+    adminSessions.set(token, now + ADMIN_SESSION_TTL_MS);
+    res.cookie(ADMIN_SESSION_COOKIE, token, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'strict',
+      path: '/',
+      maxAge: ADMIN_SESSION_TTL_MS,
+    });
+    res.json({ ok: true, expiresInSeconds: ADMIN_SESSION_TTL_MS / 1000 });
+  });
+
+  // All API endpoints are private by default except the explicit login and OAuth bootstrap routes.
+  app.use('/api', (req, res, next) => {
+    if (req.path === '/auth/login' || req.path === '/auth/url' || req.path === '/auth/callback' || req.path === '/auth/callback/') {
+      next();
+      return;
+    }
+    requireAdminSession(req, res, next);
+  });
+
+  app.get('/api/auth/session', (_req, res) => {
+    res.json({ authenticated: true, expiresInSeconds: ADMIN_SESSION_TTL_MS / 1000 });
+  });
+
+  app.post('/api/auth/logout', (req, res) => {
+    const token = readCookie(req, ADMIN_SESSION_COOKIE);
+    if (token) adminSessions.delete(token);
+    res.clearCookie(ADMIN_SESSION_COOKIE, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'strict',
+      path: '/',
+    });
+    res.json({ ok: true });
+  });
 
   app.use('/api/terminal', express.json({ limit: '10mb' }));
   app.use('/api/root-port', express.json({ limit: '10mb' }));
@@ -1197,8 +1315,7 @@ async function startServer() {
 
     const resolvedCwd =
       workingDir === 'install_stage'
-        ? INSTALL_STAGE_ROOT
-        : workingDir === 'var_tmp'
+        ? INSTALL_STAGE_ROOT        : workingDir === 'var_tmp'
         ? VAR_TMP_ROOT
         : workingDir === 'depot'
         ? DEPOT_ROOT
@@ -1397,7 +1514,6 @@ async function startServer() {
     });
 
     req.pipe(writeStream);
-
     writeStream.on('finish', async () => {
       const sha256 = hash.digest('hex');
       const isExecutable = category === 'scripts' || safeName.endsWith('.sh') || safeName.endsWith('.py');
@@ -1597,8 +1713,7 @@ with zipfile.ZipFile(sys.stdout.buffer, 'w', zipfile.ZIP_DEFLATED) as zf:
         rel_base = os.path.relpath(base, root_dir)
         if rel_base.startswith('offline-depot/splunk_bins') or rel_base.startswith('offline-depot/rpms'):
             continue
-        for f in files:
-            full_path = os.path.join(base, f)
+        for f in files:            full_path = os.path.join(base, f)
             arcname = os.path.join('MAN7', os.path.relpath(full_path, root_dir)).replace('\\\\', '/')
             try:
                 zf.write(full_path, arcname)
@@ -1797,8 +1912,7 @@ with zipfile.ZipFile(sys.stdout.buffer, 'w', zipfile.ZIP_DEFLATED) as zf:
       sha: string;
     }> = [];
 
-    for (const file of files) {
-      const contentB64 = fs.readFileSync(file.fullPath).toString('base64');
+    for (const file of files) {      const contentB64 = fs.readFileSync(file.fullPath).toString('base64');
       const blobResp = await fetch(`https://api.github.com/repos/${owner}/${repoName}/git/blobs`, {
         method: 'POST',
         headers: ghHeaders,
@@ -1997,8 +2111,7 @@ with zipfile.ZipFile(sys.stdout.buffer, 'w', zipfile.ZIP_DEFLATED) as zf:
         avatarUrl: userData.avatar_url || '',
         htmlUrl: userData.html_url || `https://github.com/${userData.login}`,
         connectedAt: new Date().toISOString(),
-        repoName: 'MAN7',
-        branch: 'security/production-readiness-audit',
+        repoName: 'MAN7',        branch: 'security/production-readiness-audit',
         autoSync: false,
       });
 
@@ -2197,8 +2310,7 @@ with zipfile.ZipFile(sys.stdout.buffer, 'w', zipfile.ZIP_DEFLATED) as zf:
                 inputs: { clean_previous: 'true' },
               }),
             }
-          );
-          workflowTriggered = dispatchResp.ok || dispatchResp.status === 204;
+          );          workflowTriggered = dispatchResp.ok || dispatchResp.status === 204;
         } catch {
           // ignore if workflow dispatch is already triggered by push event
         }
@@ -2397,8 +2509,7 @@ with zipfile.ZipFile(sys.stdout.buffer, 'w', zipfile.ZIP_DEFLATED) as zf:
         command: item.command,
         cwd: `root@${rootPortState.host || DEFAULT_CODESPACE_HOST}:9099 (/opt/splunk-airgap)`,
         exitCode: result.exitCode,
-        stdout: result.stdout,
-        stderr: result.stderr,
+        stdout: result.stdout,        stderr: result.stderr,
         durationMs,
         timestamp: new Date().toISOString(),
         viaRootPort: `${rootPortState.host || DEFAULT_CODESPACE_HOST}:9099`,
