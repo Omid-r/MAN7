@@ -2,7 +2,7 @@ name: MAN7 CI
 
 on:
   pull_request:
-    branches: [main]
+    branches: [main, "security/production-readiness-audit"]
   push:
     branches: [main, "security/**"]
   workflow_dispatch:
