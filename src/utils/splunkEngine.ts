@@ -705,7 +705,7 @@ for pkg in ${rpmNames}; do
     if [ -f "/opt/splunk-airgap/rpms/\${pkg}-1.0.el9.x86_64.rpm" ]; then
       cp -f "/opt/splunk-airgap/rpms/\${pkg}-1.0.el9.x86_64.rpm" "\${RPM_DIR}/"
     else
-      echo "ERROR: Required RPM '${pkg}' was not downloaded or found in trusted cache." >&2
+      echo "ERROR: Required RPM '\${pkg}' was not downloaded or found in trusted cache." >&2
       exit 1
     fi
   fi
