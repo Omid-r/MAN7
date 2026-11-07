@@ -192,6 +192,7 @@ export function createRemoteExecutionRouter(): express.Router {
     }
 
     let target: RemoteTarget | undefined;
+    let lockAcquired = false;
     const startedAt = Date.now();
     try {
       const targets = parseTargets();
@@ -205,6 +206,7 @@ export function createRemoteExecutionRouter(): express.Router {
         return;
       }
       activeTargets.add(target.id);
+      lockAcquired = true;
       if (process.getuid && process.getuid() === 0) {
         throw new Error('MAN7 must run as a dedicated non-root service account.');
       }
@@ -246,7 +248,7 @@ export function createRemoteExecutionRouter(): express.Router {
       }
       res.status(502).json({ error: message });
     } finally {
-      if (target) activeTargets.delete(target.id);
+      if (target && lockAcquired) activeTargets.delete(target.id);
     }
   });
 
