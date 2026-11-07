@@ -197,8 +197,7 @@ function startSplunkLabPortListeners() {
   if (splunkMockServers.length > 0) return;
 
   // Port 8000: Splunk Web HTTP endpoint
-  const web8000 = net.createServer((socket) => {    socket.on('data', () => {
-      const body = JSON.stringify({
+  const web8000 = net.createServer((socket) => {    socket.on('data', () => {      const body = JSON.stringify({
         product: 'Splunk Enterprise',
         version: splunkLabVersion,
         build: splunkLabBuild,
@@ -397,8 +396,7 @@ for arg in "$@"; do
     *)
       PKGS+=("$arg")
       ;;  esac
-done
-mkdir -p "$DESTDIR"
+donemkdir -p "$DESTDIR"
 if [ "\${#PKGS[@]}" -eq 0 ]; then
   PKGS=(glibc glibc-common libxcrypt-compat policycoreutils policycoreutils-python-utils selinux-policy-targeted tuned numactl chrony firewalld rsync tar openssl lsof)
 fi
@@ -597,8 +595,7 @@ function provisionUbuntu20Splunk9Lab(cleanPrevious = true) {
         'DISTRIB_ID=Ubuntu\nDISTRIB_RELEASE=20.04\nDISTRIB_CODENAME=focal\nDISTRIB_DESCRIPTION="Ubuntu 20.04.6 LTS"\n',
         'utf-8'
       );
-    } catch {
-      // ignore if read-only in restricted environments    }
+    } catch {      // ignore if read-only in restricted environments    }
 
     // 2. Create /opt/splunk directory hierarchy for Splunk Enterprise 9.2.1
     const splunkDirs = [
@@ -797,8 +794,7 @@ case "\${CMD}" in
     echo "Checking: /opt/splunk/etc/system/local/server.conf ... OK"
     echo "No spec file errors found."
     ;;
-  backup)    mkdir -p /opt/splunk/var/lib/splunk/kvstoreBackup
-    tar -czf /opt/splunk/var/lib/splunk/kvstoreBackup/kvstore_migration_backup.tar.gz -C /opt/splunk/etc/system local
+  backup)    mkdir -p /opt/splunk/var/lib/splunk/kvstoreBackup    tar -czf /opt/splunk/var/lib/splunk/kvstoreBackup/kvstore_migration_backup.tar.gz -C /opt/splunk/etc/system local
     echo "KV Store point-in-time backup archive created: /opt/splunk/var/lib/splunk/kvstoreBackup/kvstore_migration_backup.tar.gz"
     ;;
   migrate)
@@ -997,8 +993,7 @@ function executeCommandOverTcpRootPort(
       const cleaned = rawOutput.replace(/__MAN7_EXIT_CODE:\d+__\s*$/, '').trimEnd();
       finish(cleaned, '', exitCode);
     });
-    socket.on('error', (err) => {
-      clearTimeout(timer);
+    socket.on('error', (err) => {      clearTimeout(timer);
       finish('', `خطا در اتصال به پورت Root سرور (${host}:${port}): ${err.message}`, 1);
     });
   });
@@ -1197,8 +1192,7 @@ async function startServer() {
   });
   // 2. Live Linux Shell Command Execution Engine (Executes via configured Root Port or direct local /bin/bash)
   app.post('/api/terminal/exec', async (req, res) => {
-    const { command, workingDir, stepContextFA } = req.body as {
-      command?: string;
+    const { command, workingDir, stepContextFA } = req.body as {      command?: string;
       workingDir?: string;
       stepContextFA?: string;
     };
@@ -1397,8 +1391,7 @@ async function startServer() {
     const targetInstallPath = resolveTargetInstallPath(category, safeName, customTargetDir);
     try {
       fs.mkdirSync(path.dirname(targetInstallPath), { recursive: true });
-    } catch {
-      // ignore if permission restricted
+    } catch {      // ignore if permission restricted
     }
 
     const hash = crypto.createHash('sha256');
@@ -1597,8 +1590,7 @@ async function startServer() {
     });
   });
 
-  app.get('/api/release/download-windows-zip', (_req, res) => {
-    res.setHeader('Content-Type', 'application/zip');
+  app.get('/api/release/download-windows-zip', (_req, res) => {    res.setHeader('Content-Type', 'application/zip');
     res.setHeader('Content-Disposition', 'attachment; filename="MAN7-Windows-Portable.zip"');
 
     const pyScript = `
@@ -1797,8 +1789,7 @@ with zipfile.ZipFile(sys.stdout.buffer, 'w', zipfile.ZIP_DEFLATED) as zf:
     }
 
     // 2. Get latest commit SHA on target branch (if exists)
-    let latestCommitSha: string | null = null;
-    const refResp = await fetch(`https://api.github.com/repos/${owner}/${repoName}/git/ref/heads/${branch}`, {
+    let latestCommitSha: string | null = null;    const refResp = await fetch(`https://api.github.com/repos/${owner}/${repoName}/git/ref/heads/${branch}`, {
       headers: ghHeaders,
     });
     if (refResp.ok) {
@@ -1997,8 +1988,7 @@ with zipfile.ZipFile(sys.stdout.buffer, 'w', zipfile.ZIP_DEFLATED) as zf:
         headers: {
           Authorization: `Bearer ${tokenData.access_token}`,
           Accept: 'application/vnd.github+json',
-          'User-Agent': 'MAN7-AirGap-Suite',
-        },
+          'User-Agent': 'MAN7-AirGap-Suite',        },
       });
       if (!userResp.ok) {
         throw new Error('خطا در دریافت پروفایل کاربری GitHub');
@@ -2018,12 +2008,12 @@ with zipfile.ZipFile(sys.stdout.buffer, 'w', zipfile.ZIP_DEFLATED) as zf:
         htmlUrl: userData.html_url || `https://github.com/${userData.login}`,
         connectedAt: new Date().toISOString(),
         repoName: 'MAN7',
-        branch: 'main',
-        autoSync: true,
+        branch: 'security/production-readiness-audit',
+        autoSync: false,
       });
 
-      // Trigger immediate automatic push in background upon login
-      pushWorkspaceToGithub({ repoName: 'MAN7', branch: 'main' }).catch(() => null);
+      // Do not push workspace changes automatically during OAuth login.
+      // Repository writes require an explicit operator action.
 
       res.send(`
         <html>
@@ -2058,7 +2048,7 @@ with zipfile.ZipFile(sys.stdout.buffer, 'w', zipfile.ZIP_DEFLATED) as zf:
   app.post('/api/github/connect-token', express.json(), async (req, res) => {
     const token = String(req.body?.token || '').trim();
     const repoName = String(req.body?.repoName || 'MAN7').trim() || 'MAN7';
-    const branch = String(req.body?.branch || 'main').trim() || 'main';
+    const branch = String(req.body?.branch || 'security/production-readiness-audit').trim() || 'security/production-readiness-audit';
     const privateRepo = Boolean(req.body?.privateRepo);
 
     if (!token) {
@@ -2098,16 +2088,14 @@ with zipfile.ZipFile(sys.stdout.buffer, 'w', zipfile.ZIP_DEFLATED) as zf:
         repoName,
         branch,
         privateRepo,
-        autoSync: true,
+        autoSync: false,
       });
 
-      // Immediately sync the repository after connecting!
-      const syncResult = await pushWorkspaceToGithub({ repoName, branch, privateRepo });
-
+      // Connecting credentials must not implicitly write to a repository.
       res.json({
         ok: true,
         user: githubSession,
-        syncResult,
+        syncResult: null,
       });
     } catch (err) {
       res.status(500).json({ error: (err as Error).message });
@@ -2197,8 +2185,7 @@ with zipfile.ZipFile(sys.stdout.buffer, 'w', zipfile.ZIP_DEFLATED) as zf:
       const syncResult = await pushWorkspaceToGithub({
         repoName,
         branch,
-        privateRepo,
-        cleanPreviousHistory: true,
+        privateRepo,        cleanPreviousHistory: true,
         commitMessage: `feat(lab): clean previous files & provision Ubuntu 20.04 LTS + Splunk 9.2.1 Lab environment`,
       });
 
@@ -2397,8 +2384,7 @@ with zipfile.ZipFile(sys.stdout.buffer, 'w', zipfile.ZIP_DEFLATED) as zf:
       },
       {
         stageNumber: 5,
-        titleFA: 'گام ۵: اجرای واقعی اسکریپت گام B (step_b_offline_rhel_deployer.sh) — ایمن‌سازی کرنل و ارتقاء چندمرحله‌ای (8.1.14 → 8.2.12 → 9.0.9 → 9.3.2)',
-        command:
+        titleFA: 'گام ۵: اجرای واقعی اسکریپت گام B (step_b_offline_rhel_deployer.sh) — ایمن‌سازی کرنل و ارتقاء چندمرحله‌ای (8.1.14 → 8.2.12 → 9.0.9 → 9.3.2)',        command:
           'bash /opt/splunk-airgap/scripts/step_b_offline_rhel_deployer.sh && /opt/splunk/bin/splunk version && /opt/splunk/bin/splunk status',
       },
       {
