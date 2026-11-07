@@ -56,3 +56,12 @@ Official Splunk 10.6 guidance currently states:
 - [Upgrade to a cohosted KV Store](https://help.splunk.com/en/splunk-enterprise/administer/admin-manual/10.6/administer-the-app-key-value-store/upgrade-to-a-cohosted-kv-store)
 - [Upgrade the KV Store server version](https://help.splunk.com/en/splunk-enterprise/administer/admin-manual/10.6/administer-the-app-key-value-store/upgrade-the-kv-store-server-version)
 - [About upgrading to 10.6 — read first](https://help.splunk.com/en/splunk-enterprise/get-started/install-and-upgrade/10.6/upgrade-or-migrate-splunk-enterprise/about-upgrading-to-10.6-read-this-first)
+
+
+## Additional containment changes in the follow-up commits
+
+- Removed automatic destructive lab provisioning from server startup. The provisioning routine now requires the explicit `MAN7_ENABLE_DESTRUCTIVE_LAB_PROVISIONING=true` opt-in and is intended only for a disposable isolated VM. This is still a legacy simulator, not a supported production deployment mechanism.
+- Mock Splunk listeners bind to `127.0.0.1`, not all interfaces.
+- The management server binds to `127.0.0.1` by default. Setting `MAN7_BIND_HOST=0.0.0.0` is an explicit network exposure decision; it does **not** make the API safe to expose. Complete API authentication, authorization, and CSRF controls remain mandatory before any untrusted-network exposure.
+- GitHub OAuth/PAT connection no longer triggers an implicit repository push. Repository writes must be initiated explicitly by the operator; the default connection branch is the MAN7 security work branch rather than `main`.
+- These changes reduce accidental/destructive behavior but do not close the privileged API authorization release blocker.
