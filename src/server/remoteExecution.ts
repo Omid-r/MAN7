@@ -89,7 +89,10 @@ function assertExactHostPin(target: RemoteTarget): void {
     const trimmed = line.trim();
     if (!trimmed || trimmed.startsWith('#')) return false;
     const fields = trimmed.split(/\s+/);
-    if (fields.length < 3 || fields[0].startsWith('@')) return false;
+    if (fields.length < 3) return false;
+    if (fields[0].startsWith('@')) {
+      throw new Error('known_hosts certificate-authority/revocation markers are not accepted in phase 1.');
+    }
     const names = fields[0].split(',');
     if (names.some((name) => name.includes('*') || name.includes('?') || name.startsWith('|'))) {
       throw new Error('known_hosts must use exact, unhashed host entries without wildcards.');
