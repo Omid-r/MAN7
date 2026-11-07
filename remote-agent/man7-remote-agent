@@ -1,0 +1,124 @@
+#!/usr/bin/python3
+"""Read-only MAN7 SSH forced-command agent. Requires Python 3 and the man7-remote account."""
+import json
+import os
+import platform
+import pwd
+import shutil
+import subprocess
+import sys
+from pathlib import Path
+
+EXPECTED_COMMAND = "man7-remote-agent preflight"
+EXPECTED_ACCOUNT = "man7-remote"
+
+
+def emit(payload, exit_code=0):
+    sys.stdout.write(json.dumps(payload, separators=(",", ":"), sort_keys=True) + "\n")
+    raise SystemExit(exit_code)
+
+
+def read_os_release():
+    values = {}
+    try:
+        for line in Path("/etc/os-release").read_text(encoding="utf-8").splitlines():
+            if "=" in line:
+                key, value = line.split("=", 1)
+                values[key] = value.strip().strip('"')
+    except OSError:
+        pass
+    return values
+
+
+def cpu_flags():
+    flags = set()
+    try:
+        for line in Path("/proc/cpuinfo").read_text(encoding="utf-8").splitlines():
+            if line.lower().startswith(("flags", "features")) and ":" in line:
+                flags.update(line.split(":", 1)[1].lower().split())
+                break
+    except OSError:
+        pass
+    names = {"avx": "avx", "avx2": "avx2", "sse4_2": "sse4_2", "aes": "aes"}
+    return sorted(label for label, flag in names.items() if flag in flags)
+
+
+def splunk_version():
+    version_file = Path("/opt/splunk/etc/splunk.version")
+    values = {}
+    try:
+        for line in version_file.read_text(encoding="utf-8").splitlines():
+            if "=" in line:
+                key, value = line.split("=", 1)
+                if key in {"VERSION", "BUILD"}:
+                    values[key.lower()] = value.strip()
+    except OSError:
+        return None
+    return values or None
+
+
+def service_state():
+    try:
+        result = subprocess.run(
+            ["/usr/bin/systemctl", "is-active", "Splunkd"],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            text=True,
+            timeout=3,
+            check=False,
+            env={"PATH": "/usr/bin:/bin", "LANG": "C"},
+        )
+        return result.stdout.strip() or "unknown"
+    except (OSError, subprocess.TimeoutExpired):
+        return "unknown"
+
+
+def main():
+    if os.environ.get("SSH_ORIGINAL_COMMAND", "") != EXPECTED_COMMAND:
+        emit({"ok": False, "error": "command_not_allowed"}, 126)
+
+    try:
+        account = pwd.getpwuid(os.getuid()).pw_name
+    except KeyError:
+        emit({"ok": False, "error": "unknown_service_account"}, 77)
+
+    if os.getuid() == 0 or account != EXPECTED_ACCOUNT:
+        emit({"ok": False, "error": "wrong_service_account"}, 77)
+
+    release = read_os_release()
+    usage = shutil.disk_usage("/opt" if Path("/opt").exists() else "/")
+    splunk_home = Path("/opt/splunk")
+    report = {
+        "ok": True,
+        "schemaVersion": 1,
+        "hostname": platform.node(),
+        "account": account,
+        "uid": os.getuid(),
+        "osName": release.get("NAME", platform.system()),
+        "osPrettyName": release.get("PRETTY_NAME", "unknown"),
+        "osVersion": release.get("VERSION_ID", "unknown"),
+        "kernel": platform.release(),
+        "architecture": platform.machine(),
+        "cpuCores": os.cpu_count() or 0,
+        "cpuFeatures": cpu_flags(),
+        "memoryBytes": 0,
+        "diskPath": "/opt" if Path("/opt").exists() else "/",
+        "diskFreeBytes": usage.free,
+        "splunkHomeExists": splunk_home.is_dir(),
+        "splunkVersion": splunk_version(),
+        "splunkServiceState": service_state(),
+        "kvStoreStatus": "not_checked",
+    }
+    try:
+        for line in Path("/proc/meminfo").read_text(encoding="utf-8").splitlines():
+            if line.startswith("MemTotal:"):
+                report["memoryBytes"] = int(line.split()[1]) * 1024
+                break
+    except (OSError, ValueError, IndexError):
+        pass
+    emit(report)
+
+
+if __name__ == "__main__":
+    main()
