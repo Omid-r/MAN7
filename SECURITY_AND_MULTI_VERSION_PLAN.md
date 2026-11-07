@@ -16,10 +16,10 @@ This branch is a remediation baseline, not a production release. The existing im
 ## API authentication and remote execution safeguards
 
 - All `/api/*` routes are private by default. The only unauthenticated API routes are the explicit admin login endpoint and GitHub OAuth bootstrap/callback routes.
-- Configure `MAN7_ADMIN_PASSWORD` as a long random server-side secret. If it is absent, privileged API access fails closed with HTTP 503. Never expose it through a `VITE_*` variable or commit a real secret.
+- Configure `MAN7_ADMIN_PASSWORD` as a server-side secret of at least 24 characters (generate it with `openssl rand -base64 36`). If it is absent or too short, privileged API access fails closed with HTTP 503. Never expose it through a `VITE_*` variable or commit a real secret.
 - Admin login uses an HttpOnly, SameSite=Strict session cookie with a 30-minute lifetime, constant-time password comparison, in-memory session expiry, and a per-IP login attempt limit. Mutating API requests require a same-origin Origin header.
 - Use HTTPS in production. The management listener binds to `127.0.0.1` by default; do not expose it directly. If a reverse proxy is used, it must be trusted and configured deliberately.
-- GitHub OAuth uses a short-lived, browser-bound state cookie to mitigate login CSRF. GitHub credential files are written with owner-only permissions and remain excluded from Git.
+- GitHub OAuth uses a short-lived, browser-bound state cookie to mitigate login CSRF. GitHub credential files are written with owner-only permissions, remain excluded from Git, and access tokens are never returned in API responses.
 - The arbitrary TCP-to-`/bin/bash` bridge and the TCP command transport have been removed. Remote execution is intentionally unavailable until authenticated SSH with pinned host keys, a dedicated least-privilege account, narrowly scoped sudo, and auditable command policy are implemented.
 - Local terminal execution remains an administrator-only capability behind the private API session. It is still arbitrary shell execution; apply OS-level least privilege and do not run the MAN7 service as root.
 
