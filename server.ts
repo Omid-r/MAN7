@@ -197,8 +197,7 @@ function startSplunkLabPortListeners() {
 
   // Port 8000: Splunk Web HTTP endpoint
   const web8000 = net.createServer((socket) => {    socket.on('data', () => {      const body = JSON.stringify({        product: 'Splunk Enterprise',        version: splunkLabVersion,
-        build: splunkLabBuild,
-        os: 'Ubuntu 20.04.6 LTS (Focal Fossa)',
+        build: splunkLabBuild,        os: 'Ubuntu 20.04.6 LTS (Focal Fossa)',
         hostname: 'ubuntu20-splunk9-lab',
         webPort: 8000,
         status: splunkLabServiceRunning ? 'RUNNING' : 'STOPPED',
@@ -397,8 +396,7 @@ if [ "\${#PKGS[@]}" -eq 0 ]; then  PKGS=(glibc glibc-common libxcrypt-compat pol
 fifor pkg in "\${PKGS[@]}"; do
   RPM_FILE="\${DESTDIR}/\${pkg}-2.34-100.el9.x86_64.rpm"
   printf "RPM_BINARY_PACKAGE:%s:ARCH=x86_64:SHA256_VERIFIED\\n" "$pkg" > "$RPM_FILE"
-  echo "[DNF-Harvester] Downloaded & resolved package: \$(basename "$RPM_FILE")"
-done
+  echo "[DNF-Harvester] Downloaded & resolved package: \$(basename "$RPM_FILE")"done
 echo "Complete! Resolved \${#PKGS[@]} RPM packages + transitive dependencies into \${DESTDIR}."
 `;
   if (!fs.existsSync('/usr/bin/dnf')) {
@@ -597,8 +595,7 @@ function provisionUbuntu20Splunk9Lab(cleanPrevious = true) {
       '/opt/splunk/etc/auth',
       '/opt/splunk/var/log/splunk',
       '/opt/splunk/var/run/splunk',
-      '/opt/splunk/var/lib/splunk/kvstore/mongo',
-      '/opt/splunk/var/lib/splunk/kvstoreBackup',
+      '/opt/splunk/var/lib/splunk/kvstore/mongo',      '/opt/splunk/var/lib/splunk/kvstoreBackup',
     ];
     for (const d of splunkDirs) {
       fs.mkdirSync(d, { recursive: true });
@@ -797,8 +794,7 @@ case "\${CMD}" in
     echo "Splunk \${VER} (build \${BLD}) - executed: \${CMD} $*"
     ;;
 esac
-`;
-    fs.writeFileSync('/opt/splunk/bin/splunk', splunkCliScript, { encoding: 'utf-8', mode: 0o755 });
+`;    fs.writeFileSync('/opt/splunk/bin/splunk', splunkCliScript, { encoding: 'utf-8', mode: 0o755 });
     try {
       if (fs.existsSync('/usr/local/bin/splunk')) fs.unlinkSync('/usr/local/bin/splunk');
       fs.symlinkSync('/opt/splunk/bin/splunk', '/usr/local/bin/splunk');
@@ -997,8 +993,7 @@ async function startServer() {
       return;
     }
     failedAdminLogins.delete(ip);
-    const token = crypto.randomBytes(32).toString('hex');
-    adminSessions.set(token, now + ADMIN_SESSION_TTL_MS);
+    const token = crypto.randomBytes(32).toString('hex');    adminSessions.set(token, now + ADMIN_SESSION_TTL_MS);
     res.cookie(ADMIN_SESSION_COOKIE, token, {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
@@ -1197,7 +1192,6 @@ async function startServer() {
     if (!command || typeof command !== 'string' || !command.trim()) {
       res.status(400).json({ error: 'دستور شل معتبر وارد نشده است.' });      return;
     }
-
     const resolvedCwd =
       workingDir === 'install_stage'
         ? INSTALL_STAGE_ROOT        : workingDir === 'var_tmp'
@@ -1397,8 +1391,7 @@ async function startServer() {
       hash.update(chunk);
     });
 
-    req.pipe(writeStream);
-    writeStream.on('finish', async () => {
+    req.pipe(writeStream);    writeStream.on('finish', async () => {
       const sha256 = hash.digest('hex');
       const isExecutable = category === 'scripts' || safeName.endsWith('.sh') || safeName.endsWith('.py');
 
@@ -1597,8 +1590,7 @@ with zipfile.ZipFile(sys.stdout.buffer, 'w', zipfile.ZIP_DEFLATED) as zf:
         if rel_base.startswith('offline-depot/splunk_bins') or rel_base.startswith('offline-depot/rpms'):
             continue
         for f in files:            full_path = os.path.join(base, f)
-            arcname = os.path.join('MAN7', os.path.relpath(full_path, root_dir)).replace('\\\\', '/')
-            try:
+            arcname = os.path.join('MAN7', os.path.relpath(full_path, root_dir)).replace('\\\\', '/')            try:
                 zf.write(full_path, arcname)
             except Exception:
                 pass
@@ -1642,6 +1634,7 @@ with zipfile.ZipFile(sys.stdout.buffer, 'w', zipfile.ZIP_DEFLATED) as zf:
   }
 
   const GITHUB_SESSION_FILE = path.join(DEPOT_ROOT, 'logs', 'github_session.json');
+  const githubOAuthStates = new Map<string, number>();
   const GITHUB_SYNC_CONFIG_FILE = path.join(ROOT_DIR, '.github-sync.json');
 
   function loadGithubSession(): GitHubAuthSession | null {
@@ -1671,8 +1664,11 @@ with zipfile.ZipFile(sys.stdout.buffer, 'w', zipfile.ZIP_DEFLATED) as zf:
     try {
       if (session) {
         const payload = JSON.stringify(session, null, '  ');
-        fs.writeFileSync(GITHUB_SESSION_FILE, payload, 'utf-8');
-        fs.writeFileSync(GITHUB_SYNC_CONFIG_FILE, payload, 'utf-8');
+        fs.mkdirSync(path.dirname(GITHUB_SESSION_FILE), { recursive: true, mode: 0o700 });
+        fs.writeFileSync(GITHUB_SESSION_FILE, payload, { encoding: 'utf-8', mode: 0o600 });
+        fs.chmodSync(GITHUB_SESSION_FILE, 0o600);
+        fs.writeFileSync(GITHUB_SYNC_CONFIG_FILE, payload, { encoding: 'utf-8', mode: 0o600 });
+        fs.chmodSync(GITHUB_SYNC_CONFIG_FILE, 0o600);
       } else {
         if (fs.existsSync(GITHUB_SESSION_FILE)) fs.unlinkSync(GITHUB_SESSION_FILE);
         if (fs.existsSync(GITHUB_SYNC_CONFIG_FILE)) fs.unlinkSync(GITHUB_SYNC_CONFIG_FILE);
@@ -1797,8 +1793,7 @@ with zipfile.ZipFile(sys.stdout.buffer, 'w', zipfile.ZIP_DEFLATED) as zf:
     for (const file of files) {      const contentB64 = fs.readFileSync(file.fullPath).toString('base64');
       const blobResp = await fetch(`https://api.github.com/repos/${owner}/${repoName}/git/blobs`, {
         method: 'POST',
-        headers: ghHeaders,
-        body: JSON.stringify({
+        headers: ghHeaders,        body: JSON.stringify({
           content: contentB64,
           encoding: 'base64',
         }),
@@ -1920,11 +1915,14 @@ with zipfile.ZipFile(sys.stdout.buffer, 'w', zipfile.ZIP_DEFLATED) as zf:
       return;
     }
 
+    const state = crypto.randomBytes(32).toString('hex');
+    githubOAuthStates.set(state, Date.now() + 10 * 60 * 1000);
     const params = new URLSearchParams({
       client_id: clientId,
       redirect_uri: redirectUri,
       scope: 'repo read:user',
       allow_signup: 'true',
+      state,
     });
 
     res.json({
@@ -1936,6 +1934,14 @@ with zipfile.ZipFile(sys.stdout.buffer, 'w', zipfile.ZIP_DEFLATED) as zf:
 
   const githubCallbackHandler: express.RequestHandler = async (req, res) => {
     const code = String(req.query.code || '');
+    const state = String(req.query.state || '');
+    const stateExpiry = state ? githubOAuthStates.get(state) : undefined;
+    if (!state || !stateExpiry || stateExpiry <= Date.now()) {
+      if (state) githubOAuthStates.delete(state);
+      res.status(400).send('درخواست OAuth نامعتبر یا منقضی شده است. ورود را دوباره آغاز کنید.');
+      return;
+    }
+    githubOAuthStates.delete(state);
     const clientId = process.env.CLIENT_ID || process.env.GITHUB_CLIENT_ID || '';
     const clientSecret = process.env.CLIENT_SECRET || process.env.GITHUB_CLIENT_SECRET || '';
     const redirectUri = `${resolveAppBaseUrl(req)}/auth/callback`;
@@ -1998,19 +2004,18 @@ with zipfile.ZipFile(sys.stdout.buffer, 'w', zipfile.ZIP_DEFLATED) as zf:
 
       // Do not push workspace changes automatically during OAuth login.
       // Repository writes require an explicit operator action.
-
       res.send(`
         <html>
           <body style="font-family: sans-serif; background: #090d16; color: #10b981; padding: 24px; text-align: center;">
             <script>
               if (window.opener) {
-                window.opener.postMessage({ type: 'OAUTH_AUTH_SUCCESS' }, '*');
+                window.opener.postMessage({ type: 'OAUTH_AUTH_SUCCESS' }, window.location.origin);
                 window.close();
               } else {
                 window.location.href = '/';
               }
             </script>
-            <p>اتصال به حساب GitHub (${userData.login}) و فعال‌سازی آپدیت خودکار انجام شد. این پنجره بسته می‌شود.</p>
+            <p>حساب GitHub (${userData.login}) متصل شد. برای مدیریت MAN7 ابتدا با رمز مدیر وارد شوید. این پنجره بسته می‌شود.</p>
           </body>
         </html>
       `);
@@ -2197,8 +2202,7 @@ with zipfile.ZipFile(sys.stdout.buffer, 'w', zipfile.ZIP_DEFLATED) as zf:
       }
 
       res.json({
-        ok: true,
-        ...syncResult,
+        ok: true,        ...syncResult,
         workflowTriggered: true,
         codespacesUrl: `${syncResult.repoUrl}/codespaces`,
         actionsUrl: `${syncResult.repoUrl}/actions`,
@@ -2397,8 +2401,7 @@ with zipfile.ZipFile(sys.stdout.buffer, 'w', zipfile.ZIP_DEFLATED) as zf:
       recordAndEchoCodespaceTerminal(entry);
       stages.push({
         stageNumber: item.stageNumber,
-        titleFA: item.titleFA,
-        command: item.command,
+        titleFA: item.titleFA,        command: item.command,
         exitCode: result.exitCode,
         stdout: result.stdout || result.stderr,
         durationMs,
