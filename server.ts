@@ -2199,6 +2199,10 @@ with zipfile.ZipFile(sys.stdout.buffer, 'w', zipfile.ZIP_DEFLATED) as zf:
 
   // Wipe previous repo files/history on GitHub, push Ubuntu 20.04 + Splunk 9.2.1 Lab (.devcontainer + workflow), and trigger GitHub Actions Lab
   app.post('/api/github/provision-lab', express.json(), async (req, res) => {
+    if (process.env.MAN7_ENABLE_DESTRUCTIVE_LAB_PROVISIONING !== 'true') {
+      res.status(503).json({ error: 'Provisioning آزمایشگاه قدیمی غیرفعال است؛ این قابلیت فقط برای VM یک‌بارمصرف و ایزوله مجاز است.' });
+      return;
+    }
     try {
       // Also reset the local Ubuntu 20.04 + Splunk 9.2.1 lab cleanly
       provisionUbuntu20Splunk9Lab(true);
@@ -2293,6 +2297,10 @@ with zipfile.ZipFile(sys.stdout.buffer, 'w', zipfile.ZIP_DEFLATED) as zf:
   });
 
   app.post('/api/lab/reset', express.json(), async (req, res) => {
+    if (process.env.MAN7_ENABLE_DESTRUCTIVE_LAB_PROVISIONING !== 'true') {
+      res.status(503).json({ error: 'بازنشانی Lab قدیمی غیرفعال است؛ از VM یک‌بارمصرف و ایزوله استفاده کنید.' });
+      return;
+    }
     const requestedHost = normalizeRootPortHost(req.body?.host || DEFAULT_CODESPACE_HOST);
     provisionUbuntu20Splunk9Lab(true);
     await startLocalRootPortListener(9099);
@@ -2318,7 +2326,12 @@ with zipfile.ZipFile(sys.stdout.buffer, 'w', zipfile.ZIP_DEFLATED) as zf:
     });
   });
 
-  app.post('/api/lab/run-e2e', express.json(), async (_req, res) => {    provisionUbuntu20Splunk9Lab(false);
+  app.post('/api/lab/run-e2e', express.json(), async (_req, res) => {
+    if (process.env.MAN7_ENABLE_DESTRUCTIVE_LAB_PROVISIONING !== 'true') {
+      res.status(503).json({ error: 'E2E آزمایشگاه قدیمی غیرفعال است؛ ابتدا محیط VM یک‌بارمصرف و ایزوله را آماده کنید.' });
+      return;
+    }
+    provisionUbuntu20Splunk9Lab(false);
     await startLocalRootPortListener(9099);
 
     // Generate the real Step A, Legacy Backup, and Step B scripts and stage them into /opt/splunk-airgap/scripts
