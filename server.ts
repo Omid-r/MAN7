@@ -56,8 +56,8 @@ function isSameOriginRequest(req: express.Request): boolean {
 }
 
 const requireAdminSession: express.RequestHandler = (req, res, next) => {
-  if (!process.env.MAN7_ADMIN_PASSWORD) {
-    res.status(503).json({ error: 'مدیریت امن فعال نیست؛ MAN7_ADMIN_PASSWORD را در محیط سرور تنظیم کنید.' });
+  if (!process.env.MAN7_ADMIN_PASSWORD || process.env.MAN7_ADMIN_PASSWORD.length < 24) {
+    res.status(503).json({ error: 'مدیریت امن فعال نیست؛ MAN7_ADMIN_PASSWORD با حداقل ۲۴ کاراکتر تصادفی را تنظیم کنید.' });
     return;
   }
 
@@ -961,6 +961,14 @@ function resolveTargetInstallPath(category: DepotCategory, safeName: string, cus
 
 async function startServer() {
   const app = express();
+  app.disable('x-powered-by');
+  app.use((_req, res, next) => {
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('Referrer-Policy', 'no-referrer');
+    res.setHeader('X-Frame-Options', 'DENY');
+    res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
+    next();
+  });
   if (process.env.MAN7_TRUST_PROXY === 'true') {
     // Only enable behind exactly one trusted local reverse proxy; never expose the app directly.
     app.set('trust proxy', 1);
@@ -972,8 +980,8 @@ async function startServer() {
 
   app.post('/api/auth/login', express.json({ limit: '4kb' }), (req, res) => {
     const configuredPassword = process.env.MAN7_ADMIN_PASSWORD || '';
-    if (!configuredPassword) {
-      res.status(503).json({ error: 'مدیریت امن فعال نیست؛ MAN7_ADMIN_PASSWORD را در محیط سرور تنظیم کنید.' });
+    if (configuredPassword.length < 24) {
+      res.status(503).json({ error: 'MAN7_ADMIN_PASSWORD باید حداقل ۲۴ کاراکتر تصادفی داشته باشد.' });
       return;
     }
     if (!isSameOriginRequest(req)) {
