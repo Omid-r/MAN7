@@ -17,7 +17,7 @@ This phase adds a narrowly scoped, read-only SSH preflight. It does **not** enab
 
 Create a dedicated OS account for MAN7 itself and run the Node service as that non-root account. Install OpenSSH client (`ssh`) on the MAN7 host.
 
-Create a private key and pinned host-key file owned by the MAN7 service account. Do not populate `known_hosts` using an unauthenticated first connection. Obtain the target host key fingerprint from a trusted out-of-band source, verify it with the infrastructure owner, then add the verified key to the file. A changed key must trigger investigation, not automatic replacement.
+Create a private key and pinned host-key file owned by the MAN7 service account. Do not populate `known_hosts` using an unauthenticated first connection. Obtain the target host key fingerprint from a trusted out-of-band source, verify it with the infrastructure owner, then add the verified key to the file using the exact target hostname (or `[hostname]:port` for non-default ports). The current implementation deliberately rejects wildcard and hashed host entries so each configured target has an explicit, exact pin. A changed key must trigger investigation, not automatic replacement.
 
 Example server-side environment (replace every example value):
 
