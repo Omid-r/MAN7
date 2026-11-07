@@ -1,5 +1,6 @@
 import 'dotenv/config';
 import express from 'express';
+import { createRemoteExecutionRouter } from './src/server/remoteExecution';
 import path from 'path';
 import fs from 'fs';
 import os from 'os';
@@ -1035,6 +1036,9 @@ async function startServer() {
     }
     requireAdminSession(req, res, next);
   });
+
+  // Remote execution is limited to a fixed, read-only SSH preflight on server-allowlisted targets.
+  app.use('/api/remote', createRemoteExecutionRouter());
 
   app.get('/api/auth/session', (_req, res) => {
     res.json({ authenticated: true, expiresInSeconds: ADMIN_SESSION_TTL_MS / 1000 });

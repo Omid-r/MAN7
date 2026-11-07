@@ -2,7 +2,7 @@ name: MAN7 CI
 
 on:
   pull_request:
-    branches: [main]
+    branches: [main, "security/production-readiness-audit"]
   push:
     branches: [main, "security/**"]
   workflow_dispatch:
@@ -29,6 +29,8 @@ jobs:
         run: npm install --ignore-scripts
       - name: TypeScript validation
         run: npm run lint
+      - name: Remote SSH agent Python syntax validation
+        run: python3 -c "import ast, pathlib; ast.parse(pathlib.Path('remote-agent/man7-remote-agent').read_text())"
       - name: Bash syntax validation
         shell: bash
         run: |
