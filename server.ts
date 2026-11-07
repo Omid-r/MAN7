@@ -176,65 +176,13 @@ function recordAndEchoCodespaceTerminal(entry: ExecutionLogEntry) {
   }
 }
 
-// Built-in TCP Root Listener Daemon (so local or loopback port tests work immediately out-of-the-box)
+// Arbitrary TCP-to-shell execution has been removed. Use an authenticated SSH transport
+// with pinned host keys and narrowly scoped sudo when remote execution is reintroduced.
 let localRootTcpServer: net.Server | null = null;
 let localRootDaemonPort = 9099;
 
-function startLocalRootPortListener(listenPort: number): Promise<boolean> {
-  // Arbitrary input is piped into /bin/bash: require explicit operator opt-in.
-  if (process.env.MAN7_ENABLE_ROOT_SHELL_BRIDGE !== 'true') return Promise.resolve(false);
-  return new Promise((resolve) => {
-    if (localRootTcpServer) {
-      try {
-        localRootTcpServer.close();
-      } catch {
-        // ignore
-      }
-      localRootTcpServer = null;
-    }
-
-    const server = net.createServer((socket) => {
-      const sh = spawn('/bin/bash', ['-s'], {
-        cwd: '/',
-        env: {
-          ...process.env,
-          PATH: '/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin',
-          DEBIAN_FRONTEND: 'noninteractive',
-          PAGER: 'cat',
-        },
-      });
-
-      socket.pipe(sh.stdin);
-      sh.stdout.pipe(socket);
-      sh.stderr.pipe(socket);
-
-      sh.on('close', () => {
-        try {
-          socket.end();
-        } catch {
-          // ignore
-        }
-      });
-
-      socket.on('error', () => {
-        try {
-          sh.kill('SIGTERM');
-        } catch {
-          // ignore
-        }
-      });
-    });
-
-    server.on('error', () => {
-      resolve(false);
-    });
-
-    server.listen(listenPort, '127.0.0.1', () => {
-      localRootTcpServer = server;
-      localRootDaemonPort = listenPort;
-      resolve(true);
-    });
-  });
+function startLocalRootPortListener(_listenPort: number): Promise<boolean> {
+  return Promise.resolve(false);
 }
 
 // The privileged shell bridge is not started automatically.
@@ -397,8 +345,7 @@ function installLabSystemCliShims() {
       '[sysctl]',
       'vm.swappiness=1',
       'vm.max_map_count=262144',
-      'net.core.somaxconn=4096',
-      '',
+      'net.core.somaxconn=4096',      '',
     ].join('\n'),
     'utf-8'
   );
@@ -597,8 +544,7 @@ function provisionUbuntu20Splunk9Lab(cleanPrevious = true) {
       for (const cat of ['splunk_bins', 'rpms', 'configs', 'scripts'] as const) {
         const depotCatDir = path.join(DEPOT_ROOT, cat);
         if (fs.existsSync(depotCatDir)) {
-          for (const f of fs.readdirSync(depotCatDir)) {
-            if (f !== '.gitkeep') {
+          for (const f of fs.readdirSync(depotCatDir)) {            if (f !== '.gitkeep') {
               try {
                 fs.unlinkSync(path.join(depotCatDir, f));
               } catch {
@@ -797,8 +743,7 @@ case "\${CMD}" in
   stop)
     echo "Stopping splunkd... Shutting down.  Please wait, as this may take a few minutes."
     rm -f "\${PID_FILE}"
-    echo "Stopping splunk helpers... Done."
-    ;;
+    echo "Stopping splunk helpers... Done."    ;;
   restart)
     "$0" stop
     "$0" start
@@ -969,78 +914,19 @@ let rootPortState: RootPortConfigState = {
 };
 
 function executeCommandOverTcpRootPort(
-  host: string,
-  port: number,
-  command: string,
-  cwdPath: string,
-  timeoutMs = 30000
+  _host: string,
+  _port: number,
+  _command: string,
+  _cwdPath: string,
+  _timeoutMs = 30000
 ): Promise<{ stdout: string; stderr: string; exitCode: number }> {
-  return new Promise((resolve) => {
-    const socket = new net.Socket();
-    let rawOutput = '';
-    let resolved = false;
-
-    const connectHost = isLocalOrCodespaceBridgeHost(host) ? '127.0.0.1' : normalizeRootPortHost(host);
-    const connectPort = isLocalOrCodespaceBridgeHost(host) ? localRootDaemonPort : port;
-    const effectiveCommand = rewriteContainerKernelPaths(command);
-
-    const finish = (stdout: string, stderr: string, exitCode: number) => {
-      if (resolved) return;
-      resolved = true;
-      try {
-        socket.destroy();
-      } catch {
-        // ignore
-      }
-      resolve({ stdout, stderr, exitCode });
-    };
-
-    const timer = setTimeout(() => {
-      finish(rawOutput, '[TIMEOUT] زمان اجرای دستور روی پورت سرور به پایان رسید.', 124);
-    }, timeoutMs);
-
-    socket.connect(connectPort, connectHost, () => {
-      const wrappedScript = [
-        `export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$PATH`,
-        `cd "${cwdPath}" 2>/dev/null || cd /`,
-        `{`,
-        effectiveCommand,
-        `}`,
-        `__MAN7_RC=$?`,
-        `echo ""`,
-        `echo "__MAN7_EXIT_CODE:\${__MAN7_RC}__"`,
-        `exit \${__MAN7_RC}`,
-        ``,
-      ].join('\n');
-
-      socket.write(wrappedScript);
-    });
-
-    socket.on('data', (chunk) => {
-      if (rawOutput.length < 300000) {
-        rawOutput += chunk.toString('utf-8');
-      }
-      const match = rawOutput.match(/__MAN7_EXIT_CODE:(\d+)__/);
-      if (match) {
-        clearTimeout(timer);
-        const exitCode = Number(match[1]) || 0;
-        const cleaned = rawOutput.replace(/__MAN7_EXIT_CODE:\d+__\s*$/, '').trimEnd();
-        finish(cleaned, '', exitCode);
-      }
-    });
-
-    socket.on('close', () => {
-      clearTimeout(timer);
-      const match = rawOutput.match(/__MAN7_EXIT_CODE:(\d+)__/);
-      const exitCode = match ? Number(match[1]) : 0;
-      const cleaned = rawOutput.replace(/__MAN7_EXIT_CODE:\d+__\s*$/, '').trimEnd();
-      finish(cleaned, '', exitCode);
-    });
-    socket.on('error', (err) => {      clearTimeout(timer);
-      finish('', `خطا در اتصال به پورت Root سرور (${host}:${port}): ${err.message}`, 1);
-    });
+  return Promise.resolve({
+    stdout: '',
+    stderr: 'اجرای فرمان از طریق TCP Root Bridge حذف شده است. برای مدیریت راه دور باید SSH احراز هویت‌شده با Host Key pinning و sudo محدود پیاده‌سازی شود.',
+    exitCode: 126,
   });
 }
+
 function sanitizeFileName(name: string): string {
   return path.basename(name).replace(/[^a-zA-Z0-9._+-]/g, '_');
 }
@@ -1197,8 +1083,7 @@ async function startServer() {
       totalMemGb: (os.totalmem() / (1024 ** 3)).toFixed(2),
       freeMemGb: (os.freemem() / (1024 ** 3)).toFixed(2),
       avxSupported,
-      thpStatus,
-      depotRoot: INSTALL_STAGE_ROOT,
+      thpStatus,      depotRoot: INSTALL_STAGE_ROOT,
       uptimeSeconds: Math.floor(os.uptime()),
       currentUser: os.userInfo().username,
       rootPortState,
@@ -1397,8 +1282,7 @@ async function startServer() {
         exitCode: code ?? (killedByTimeout ? 124 : 1),
         stdout,
         stderr: finalStderr,
-        durationMs,
-        timestamp: new Date().toISOString(),
+        durationMs,        timestamp: new Date().toISOString(),
       };
 
       executionHistory = [entry, ...executionHistory].slice(0, 100);
@@ -1597,8 +1481,7 @@ async function startServer() {
       }
       const validCat: DepotCategory = DEPOT_CATEGORIES.includes(category) ? category : 'scripts';
       const safeName = sanitizeFileName(filename);
-      const depotPath = path.join(DEPOT_ROOT, validCat, safeName);
-      const targetInstallPath = resolveTargetInstallPath(validCat, safeName, targetDir);
+      const depotPath = path.join(DEPOT_ROOT, validCat, safeName);      const targetInstallPath = resolveTargetInstallPath(validCat, safeName, targetDir);
 
       fs.writeFileSync(depotPath, content, { encoding: 'utf-8', mode: 0o755 });
 
@@ -1798,7 +1681,6 @@ with zipfile.ZipFile(sys.stdout.buffer, 'w', zipfile.ZIP_DEFLATED) as zf:
       // ignore
     }
   }
-
   function resolveAppBaseUrl(req: express.Request): string {
     if (process.env.APP_URL) {
       return process.env.APP_URL.replace(/\/+$/, '');
@@ -1997,8 +1879,7 @@ with zipfile.ZipFile(sys.stdout.buffer, 'w', zipfile.ZIP_DEFLATED) as zf:
         }),
       });
     } else {
-      await fetch(`https://api.github.com/repos/${owner}/${repoName}/git/refs`, {
-        method: 'POST',
+      await fetch(`https://api.github.com/repos/${owner}/${repoName}/git/refs`, {        method: 'POST',
         headers: ghHeaders,
         body: JSON.stringify({
           ref: `refs/heads/${branch}`,
@@ -2197,8 +2078,7 @@ with zipfile.ZipFile(sys.stdout.buffer, 'w', zipfile.ZIP_DEFLATED) as zf:
       // Connecting credentials must not implicitly write to a repository.
       res.json({
         ok: true,
-        user: githubSession,
-        syncResult: null,
+        user: githubSession,        syncResult: null,
       });
     } catch (err) {
       res.status(500).json({ error: (err as Error).message });
@@ -2397,8 +2277,7 @@ with zipfile.ZipFile(sys.stdout.buffer, 'w', zipfile.ZIP_DEFLATED) as zf:
     });
   });
 
-  app.post('/api/lab/run-e2e', express.json(), async (_req, res) => {
-    provisionUbuntu20Splunk9Lab(false);
+  app.post('/api/lab/run-e2e', express.json(), async (_req, res) => {    provisionUbuntu20Splunk9Lab(false);
     await startLocalRootPortListener(9099);
 
     // Generate the real Step A, Legacy Backup, and Step B scripts and stage them into /opt/splunk-airgap/scripts
