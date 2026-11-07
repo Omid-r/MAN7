@@ -596,7 +596,8 @@ function provisionUbuntu20Splunk9Lab(cleanPrevious = true) {
       );
     } catch {      // ignore if read-only in restricted environments    }
 
-    // 2. Create /opt/splunk directory hierarchy for Splunk Enterprise 9.2.1    const splunkDirs = [
+    // 2. Create /opt/splunk directory hierarchy for Splunk Enterprise 9.2.1
+    const splunkDirs = [
       '/opt/splunk/bin',
       '/opt/splunk/etc/system/local',      '/opt/splunk/etc/apps',
       '/opt/splunk/etc/users',
@@ -1808,7 +1809,8 @@ with zipfile.ZipFile(sys.stdout.buffer, 'w', zipfile.ZIP_DEFLATED) as zf:
       latestCommitSha = refData.object?.sha || null;
     }
 
-    // 3. Collect all workspace files (including MAN7-Standalone.html & windows-portable/*)    const files = collectWorkspaceFilesForGithub(ROOT_DIR);
+    // 3. Collect all workspace files (including MAN7-Standalone.html & windows-portable/*)
+    const files = collectWorkspaceFilesForGithub(ROOT_DIR);
     const treeItems: Array<{
       path: string;
       mode: '100644' | '100755';
