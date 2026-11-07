@@ -705,7 +705,8 @@ for pkg in ${rpmNames}; do
     if [ -f "/opt/splunk-airgap/rpms/\${pkg}-1.0.el9.x86_64.rpm" ]; then
       cp -f "/opt/splunk-airgap/rpms/\${pkg}-1.0.el9.x86_64.rpm" "\${RPM_DIR}/"
     else
-      printf "RPM_PACKAGE_BINARY:%s:OS=%s\n" "\${pkg}" "${hardening.targetRhel}" > "\${RPM_DIR}/\${pkg}-1.0.el9.x86_64.rpm"
+      echo "ERROR: Required RPM '\${pkg}' was not downloaded or found in trusted cache." >&2
+      exit 1
     fi
   fi
 done
@@ -723,13 +724,11 @@ if [ -f "/opt/splunk-airgap/splunk_bins/${hop.packageFileName}" ]; then
   cp -f "/opt/splunk-airgap/splunk_bins/${hop.packageFileName}" "\${SPLUNK_BIN_DIR}/${hop.packageFileName}"
 elif [ ! -f "\${SPLUNK_BIN_DIR}/${hop.packageFileName}" ]; then
   echo "  -> Checking local cache or fetching ${hop.packageFileName}..."
-  if ! curl -fsSL --connect-timeout 4 --max-time 10 -o "\${SPLUNK_BIN_DIR}/${hop.packageFileName}" "https://download.splunk.com/products/splunk/releases/${hop.version}/linux/${hop.packageFileName}" 2>/dev/null; then
-    mkdir -p "/tmp/splunk-pkg-build-${hop.version}/splunk/etc" "/tmp/splunk-pkg-build-${hop.version}/splunk/bin"
-    printf "VERSION=${hop.version}\\nBUILD=${SPLUNK_VERSIONS_METADATA[hop.version].buildHash}\\nPRODUCT=splunk\\nPLATFORM=Linux-x86_64\\n" > "/tmp/splunk-pkg-build-${hop.version}/splunk/etc/splunk.version"
-    [ -f /opt/splunk/bin/splunk ] && cp -f /opt/splunk/bin/splunk "/tmp/splunk-pkg-build-${hop.version}/splunk/bin/splunk"
-    tar -czf "\${SPLUNK_BIN_DIR}/${hop.packageFileName}" -C "/tmp/splunk-pkg-build-${hop.version}" splunk
-    rm -rf "/tmp/splunk-pkg-build-${hop.version}"
+  if ! curl -fsSL --connect-timeout 10 --max-time 600 -o "\${SPLUNK_BIN_DIR}/${hop.packageFileName}" "https://download.splunk.com/products/splunk/releases/${hop.version}/linux/${hop.packageFileName}"; then
+    echo "ERROR: Official Splunk artifact download failed; refusing placeholder generation." >&2
+    exit 1
   fi
+  tar -tzf "\${SPLUNK_BIN_DIR}/${hop.packageFileName}" >/dev/null
 fi`
   )
   .join('\n\n')}
@@ -793,7 +792,6 @@ sync_tree "\${OLD_SPLUNK_HOME}/etc/system/local/" "\${BACKUP_STAGE}/etc/system_l
 sync_tree "\${OLD_SPLUNK_HOME}/etc/apps" "\${BACKUP_STAGE}/etc/"
 sync_tree "\${OLD_SPLUNK_HOME}/etc/users" "\${BACKUP_STAGE}/etc/"
 sync_tree "\${OLD_SPLUNK_HOME}/etc/auth" "\${BACKUP_STAGE}/etc/"
-[ ! -f "\${OLD_SPLUNK_HOME}/etc/splunk.secret" ] && echo "MAN7_LEGACY_SPLUNK_SECRET_KEY" > "\${OLD_SPLUNK_HOME}/etc/splunk.secret"
 cp -p "\${OLD_SPLUNK_HOME}/etc/splunk.secret" "\${BACKUP_STAGE}/etc/splunk.secret"
 cp -p "\${OLD_SPLUNK_HOME}/etc/passwd" "\${BACKUP_STAGE}/etc/passwd" 2>/dev/null || true
 
@@ -826,11 +824,11 @@ SPLUNK_USER="${hardening.splunkUser}"
 SPLUNK_GROUP="${hardening.splunkGroup}"
 
 run_as_splunk() {
-  if su - "\${SPLUNK_USER}" -c "\$1" 2>/dev/null; then
-    return 0
-  else
-    eval "\$1"
+  if ! id "\${SPLUNK_USER}" >/dev/null 2>&1; then
+    echo "ERROR: Splunk service account is missing." >&2
+    return 1
   fi
+  su - "\${SPLUNK_USER}" -s /bin/bash -c "\$1"
 }
 
 if [ "\$(id -u)" -ne 0 ]; then
@@ -841,7 +839,7 @@ fi
 echo "[1/8] Pre-Flight Hardware & Air-Gap Integrity Verification..."
 ${
   plan.requiresAvxInstructionCheck
-    ? `if ! grep -qi avx /proc/cpuinfo && [ ! -f /opt/splunk/etc/splunk.version ]; then
+    ? `if ! grep -qi -w avx /proc/cpuinfo; then
   echo "CRITICAL BLOCKER: Target CPU lacks AVX instruction support required by Splunk 9.3/9.4 KV Store (MongoDB 7.0)!" >&2
   exit 1
 fi
@@ -856,8 +854,9 @@ elif ls /var/tmp/man7-offline-kit-*.tar.gz >/dev/null 2>&1; then
   FIRST_BUNDLE=\$(ls -1 /var/tmp/man7-offline-kit-*.tar.gz | head -n 1)
   tar -xzf "\${FIRST_BUNDLE}" -C "\${EXTRACT_ROOT}" --strip-components=1
 fi
-if [ ! -f "\${EXTRACT_ROOT}/SHA256SUMS.manifest" ]; then
-  (cd "\${EXTRACT_ROOT}" && find rpms splunk_bins -type f -exec sha256sum {} + > SHA256SUMS.manifest)
+if [ ! -s "\${EXTRACT_ROOT}/SHA256SUMS.manifest" ]; then
+  echo "ERROR: Missing trusted bundle manifest; refusing to reconstruct it." >&2
+  exit 1
 fi
 (cd "\${EXTRACT_ROOT}" && sha256sum -c SHA256SUMS.manifest)
 
@@ -943,11 +942,9 @@ ${plan.hops
     (hop, i) => `
 # --- HOP ${i + 1}: Upgrading to Splunk ${hop.version} (${hop.roleInPath.toUpperCase()}) ---
 echo "  => Installing Hop ${i + 1}: Splunk ${hop.version} (${hop.packageFileName})..."
-if [ ! -f "\${EXTRACT_ROOT}/splunk_bins/${hop.packageFileName}" ]; then
-  mkdir -p "/tmp/splunk-hop-${hop.version}/splunk/etc"
-  printf "VERSION=${hop.version}\\nBUILD=${SPLUNK_VERSIONS_METADATA[hop.version].buildHash}\\nPRODUCT=splunk\\nPLATFORM=Linux-x86_64\\n" > "/tmp/splunk-hop-${hop.version}/splunk/etc/splunk.version"
-  tar -czf "\${EXTRACT_ROOT}/splunk_bins/${hop.packageFileName}" -C "/tmp/splunk-hop-${hop.version}" splunk
-  rm -rf "/tmp/splunk-hop-${hop.version}"
+if [ ! -s "\${EXTRACT_ROOT}/splunk_bins/${hop.packageFileName}" ]; then
+  echo "ERROR: Required official Splunk package is missing: ${hop.packageFileName}" >&2
+  exit 1
 fi
 ${
   packageFormat === 'tgz'
@@ -962,7 +959,7 @@ ${
 run_as_splunk "\${SPLUNK_HOME}/bin/splunk status"
 sleep 1
 run_as_splunk "\${SPLUNK_HOME}/bin/splunk stop"
-run_as_splunk "\${SPLUNK_HOME}/bin/splunk migrate kvstore-storage-engine --target-engine wiredTiger --answer-yes" || true
+run_as_splunk "\${SPLUNK_HOME}/bin/splunk migrate kvstore-storage-engine --target-engine wiredTiger --answer-yes"
 run_as_splunk "\${SPLUNK_HOME}/bin/splunk start --answer-yes --no-prompt"`
     : ''
 }

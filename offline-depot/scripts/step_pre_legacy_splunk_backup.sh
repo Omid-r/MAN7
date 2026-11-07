@@ -5,7 +5,7 @@
 # ==============================================================================
 set -euo pipefail
 
-OLD_SPLUNK_HOME="/opt/splunk"
+OLD_SPLUNK_HOME="${SPLUNK_HOME:-/opt/splunk}"
 BACKUP_STAGE="/var/tmp/splunk-migration-export"
 EXPORT_ARCHIVE="/var/tmp/splunk-legacy-configs-and-state.tar.gz"
 
@@ -20,7 +20,16 @@ sync_tree() {
   fi
 }
 
-echo "[1/6] Running pre-migration configuration syntax verification (btool check)..."
+if [ ! -x "${OLD_SPLUNK_HOME}/bin/splunk" ]; then
+  echo "ERROR: Splunk binary not found at ${OLD_SPLUNK_HOME}/bin/splunk" >&2
+  exit 1
+fi
+if [ ! -s "${OLD_SPLUNK_HOME}/etc/splunk.secret" ]; then
+  echo "ERROR: Original splunk.secret is missing or empty; refusing to generate a replacement key." >&2
+  exit 1
+fi
+
+${old1}
 "${OLD_SPLUNK_HOME}/bin/splunk" cmd btool check
 
 echo "[2/6] Creating consistent KV Store point-in-time backup..."
@@ -38,7 +47,6 @@ sync_tree "${OLD_SPLUNK_HOME}/etc/system/local/" "${BACKUP_STAGE}/etc/system_loc
 sync_tree "${OLD_SPLUNK_HOME}/etc/apps" "${BACKUP_STAGE}/etc/"
 sync_tree "${OLD_SPLUNK_HOME}/etc/users" "${BACKUP_STAGE}/etc/"
 sync_tree "${OLD_SPLUNK_HOME}/etc/auth" "${BACKUP_STAGE}/etc/"
-[ ! -f "${OLD_SPLUNK_HOME}/etc/splunk.secret" ] && echo "MAN7_LEGACY_SPLUNK_SECRET_KEY" > "${OLD_SPLUNK_HOME}/etc/splunk.secret"
 cp -p "${OLD_SPLUNK_HOME}/etc/splunk.secret" "${BACKUP_STAGE}/etc/splunk.secret"
 cp -p "${OLD_SPLUNK_HOME}/etc/passwd" "${BACKUP_STAGE}/etc/passwd" 2>/dev/null || true
 
@@ -51,5 +59,7 @@ echo "[5/6] Generating SHA-256 checksums for exported configurations..."
 
 echo "[6/6] Compressing migration archive to ${EXPORT_ARCHIVE}..."
 tar -czf "${EXPORT_ARCHIVE}" -C "/var/tmp" "splunk-migration-export"
-"${OLD_SPLUNK_HOME}/bin/splunk" start --accept-license --answer-yes --no-prompt >/dev/null 2>&1 || true
-echo "COMPLETE: Copy ${EXPORT_ARCHIVE} to the new Air-Gapped RHEL server."
+"${OLD_SPLUNK_HOME}/bin/splunk" start --accept-license --answer-yes --no-prompt >/dev/null 2>&1
+tar -tzf "${EXPORT_ARCHIVE}" >/dev/null
+sha256sum "${EXPORT_ARCHIVE}" > "${EXPORT_ARCHIVE}.sha256"
+echo "COMPLETE: Archive integrity checked. Transfer ${EXPORT_ARCHIVE} and its .sha256 sidecar securely."

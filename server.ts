@@ -1,3 +1,4 @@
+import 'dotenv/config';
 import express from 'express';
 import path from 'path';
 import fs from 'fs';
@@ -21,6 +22,64 @@ const ROOT_DIR = process.cwd();
 const DEPOT_ROOT = path.join(ROOT_DIR, 'offline-depot');
 const INSTALL_STAGE_ROOT = '/opt/splunk-airgap';
 const VAR_TMP_ROOT = '/var/tmp';
+
+const ADMIN_SESSION_COOKIE = 'man7_admin_session';
+const ADMIN_SESSION_TTL_MS = 30 * 60 * 1000;
+const adminSessions = new Map<string, number>();
+const failedAdminLogins = new Map<string, { count: number; windowStartedAt: number }>();
+
+function readCookie(req: express.Request, name: string): string {
+  const header = req.headers.cookie || '';
+  for (const part of header.split(';')) {
+    const separator = part.indexOf('=');
+    if (separator < 0) continue;
+    if (part.slice(0, separator).trim() === name) {
+      try {
+        return decodeURIComponent(part.slice(separator + 1).trim());
+      } catch {
+        return '';
+      }
+    }
+  }
+  return '';
+}
+
+function isSameOriginRequest(req: express.Request): boolean {
+  const origin = req.get('origin');
+  const host = req.get('host');
+  if (!origin || !host) return false;
+  try {
+    const parsed = new URL(origin);
+    const configuredAppUrl = process.env.APP_URL ? new URL(process.env.APP_URL) : null;
+    const expectedProtocol = configuredAppUrl?.protocol || `${req.protocol}:`;
+    return parsed.host === host && parsed.protocol === expectedProtocol &&
+      (!configuredAppUrl || parsed.host === configuredAppUrl.host);
+  } catch {
+    return false;
+  }
+}
+
+const requireAdminSession: express.RequestHandler = (req, res, next) => {
+  if (!process.env.MAN7_ADMIN_PASSWORD || process.env.MAN7_ADMIN_PASSWORD.length < 24) {
+    res.status(503).json({ error: 'مدیریت امن فعال نیست؛ MAN7_ADMIN_PASSWORD با حداقل ۲۴ کاراکتر تصادفی را تنظیم کنید.' });
+    return;
+  }
+
+  if (!['GET', 'HEAD', 'OPTIONS'].includes(req.method) && !isSameOriginRequest(req)) {
+    res.status(403).json({ error: 'درخواست cross-origin یا بدون Origin رد شد.' });
+    return;
+  }
+
+  const token = readCookie(req, ADMIN_SESSION_COOKIE);
+  const expiresAt = token ? adminSessions.get(token) : undefined;
+  if (!token || !expiresAt || expiresAt <= Date.now()) {
+    if (token) adminSessions.delete(token);
+    res.status(401).json({ error: 'نشست مدیریتی معتبر نیست یا منقضی شده است.' });
+    return;
+  }
+  next();
+};
+
 
 const DEPOT_CATEGORIES = ['splunk_bins', 'rpms', 'configs', 'scripts', 'logs'] as const;
 type DepotCategory = (typeof DEPOT_CATEGORIES)[number];
@@ -125,68 +184,16 @@ function recordAndEchoCodespaceTerminal(entry: ExecutionLogEntry) {
   }
 }
 
-// Built-in TCP Root Listener Daemon (so local or loopback port tests work immediately out-of-the-box)
+// Arbitrary TCP-to-shell execution has been removed. Use an authenticated SSH transport
+// with pinned host keys and narrowly scoped sudo when remote execution is reintroduced.
 let localRootTcpServer: net.Server | null = null;
 let localRootDaemonPort = 9099;
 
-function startLocalRootPortListener(listenPort: number): Promise<boolean> {
-  return new Promise((resolve) => {
-    if (localRootTcpServer) {
-      try {
-        localRootTcpServer.close();
-      } catch {
-        // ignore
-      }
-      localRootTcpServer = null;
-    }
-
-    const server = net.createServer((socket) => {
-      const sh = spawn('/bin/bash', ['-s'], {
-        cwd: '/',
-        env: {
-          ...process.env,
-          PATH: '/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin',
-          DEBIAN_FRONTEND: 'noninteractive',
-          PAGER: 'cat',
-        },
-      });
-
-      socket.pipe(sh.stdin);
-      sh.stdout.pipe(socket);
-      sh.stderr.pipe(socket);
-
-      sh.on('close', () => {
-        try {
-          socket.end();
-        } catch {
-          // ignore
-        }
-      });
-
-      socket.on('error', () => {
-        try {
-          sh.kill('SIGTERM');
-        } catch {
-          // ignore
-        }
-      });
-    });
-
-    server.on('error', () => {
-      resolve(false);
-    });
-
-    server.listen(listenPort, '0.0.0.0', () => {
-      localRootTcpServer = server;
-      localRootDaemonPort = listenPort;
-      resolve(true);
-    });
-  });
+function startLocalRootPortListener(_listenPort: number): Promise<boolean> {
+  return Promise.resolve(false);
 }
 
-// Start default listener on port 9099 at boot
-startLocalRootPortListener(9099).catch(() => null);
-
+// The privileged shell bridge is not started automatically.
 let splunkLabServiceRunning = true;
 let splunkLabVersion = '9.2.1';
 let splunkLabBuild = '78803f08aabb';
@@ -197,13 +204,8 @@ function startSplunkLabPortListeners() {
   if (splunkMockServers.length > 0) return;
 
   // Port 8000: Splunk Web HTTP endpoint
-  const web8000 = net.createServer((socket) => {
-    socket.on('data', () => {
-      const body = JSON.stringify({
-        product: 'Splunk Enterprise',
-        version: splunkLabVersion,
-        build: splunkLabBuild,
-        os: 'Ubuntu 20.04.6 LTS (Focal Fossa)',
+  const web8000 = net.createServer((socket) => {    socket.on('data', () => {      const body = JSON.stringify({        product: 'Splunk Enterprise',        version: splunkLabVersion,
+        build: splunkLabBuild,        os: 'Ubuntu 20.04.6 LTS (Focal Fossa)',
         hostname: 'ubuntu20-splunk9-lab',
         webPort: 8000,
         status: splunkLabServiceRunning ? 'RUNNING' : 'STOPPED',
@@ -215,7 +217,7 @@ function startSplunkLabPortListeners() {
     });
   });
   web8000.on('error', () => null);
-  web8000.listen(8000, '0.0.0.0');
+  web8000.listen(8000, '127.0.0.1');
   splunkMockServers.push(web8000);
 
   // Port 8089: splunkd Management REST API
@@ -247,7 +249,7 @@ function startSplunkLabPortListeners() {
     });
   });
   mgmt8089.on('error', () => null);
-  mgmt8089.listen(8089, '0.0.0.0');
+  mgmt8089.listen(8089, '127.0.0.1');
   splunkMockServers.push(mgmt8089);
 
   // Port 9997: Splunk-to-Splunk (S2S) Indexer Receiver
@@ -256,7 +258,7 @@ function startSplunkLabPortListeners() {
     socket.end();
   });
   s2s9997.on('error', () => null);
-  s2s9997.listen(9997, '0.0.0.0');
+  s2s9997.listen(9997, '127.0.0.1');
   splunkMockServers.push(s2s9997);
 }
 
@@ -350,8 +352,7 @@ function installLabSystemCliShims() {
       '[sysctl]',
       'vm.swappiness=1',
       'vm.max_map_count=262144',
-      'net.core.somaxconn=4096',
-      '',
+      'net.core.somaxconn=4096',      '',
     ].join('\n'),
     'utf-8'
   );
@@ -397,18 +398,13 @@ for arg in "$@"; do
       ;;
     *)
       PKGS+=("$arg")
-      ;;
-  esac
-done
-mkdir -p "$DESTDIR"
-if [ "\${#PKGS[@]}" -eq 0 ]; then
-  PKGS=(glibc glibc-common libxcrypt-compat policycoreutils policycoreutils-python-utils selinux-policy-targeted tuned numactl chrony firewalld rsync tar openssl lsof)
-fi
-for pkg in "\${PKGS[@]}"; do
+      ;;  esac
+donemkdir -p "$DESTDIR"
+if [ "\${#PKGS[@]}" -eq 0 ]; then  PKGS=(glibc glibc-common libxcrypt-compat policycoreutils policycoreutils-python-utils selinux-policy-targeted tuned numactl chrony firewalld rsync tar openssl lsof)
+fifor pkg in "\${PKGS[@]}"; do
   RPM_FILE="\${DESTDIR}/\${pkg}-2.34-100.el9.x86_64.rpm"
   printf "RPM_BINARY_PACKAGE:%s:ARCH=x86_64:SHA256_VERIFIED\\n" "$pkg" > "$RPM_FILE"
-  echo "[DNF-Harvester] Downloaded & resolved package: \$(basename "$RPM_FILE")"
-done
+  echo "[DNF-Harvester] Downloaded & resolved package: \$(basename "$RPM_FILE")"done
 echo "Complete! Resolved \${#PKGS[@]} RPM packages + transitive dependencies into \${DESTDIR}."
 `;
   if (!fs.existsSync('/usr/bin/dnf')) {
@@ -543,6 +539,9 @@ function buildValidSplunkTarball(targetFilePath: string, version: string, buildH
 }
 
 function provisionUbuntu20Splunk9Lab(cleanPrevious = true) {
+  if (process.env.MAN7_ENABLE_DESTRUCTIVE_LAB_PROVISIONING !== 'true') {
+    throw new Error('Destructive mock-lab provisioning is disabled. Use an isolated disposable VM and explicit opt-in only.');
+  }
   try {
     installLabSystemCliShims();
 
@@ -551,8 +550,7 @@ function provisionUbuntu20Splunk9Lab(cleanPrevious = true) {
       for (const cat of ['splunk_bins', 'rpms', 'configs', 'scripts'] as const) {
         const depotCatDir = path.join(DEPOT_ROOT, cat);
         if (fs.existsSync(depotCatDir)) {
-          for (const f of fs.readdirSync(depotCatDir)) {
-            if (f !== '.gitkeep') {
+          for (const f of fs.readdirSync(depotCatDir)) {            if (f !== '.gitkeep') {
               try {
                 fs.unlinkSync(path.join(depotCatDir, f));
               } catch {
@@ -603,14 +601,12 @@ function provisionUbuntu20Splunk9Lab(cleanPrevious = true) {
     // 2. Create /opt/splunk directory hierarchy for Splunk Enterprise 9.2.1
     const splunkDirs = [
       '/opt/splunk/bin',
-      '/opt/splunk/etc/system/local',
-      '/opt/splunk/etc/apps',
+      '/opt/splunk/etc/system/local',      '/opt/splunk/etc/apps',
       '/opt/splunk/etc/users',
       '/opt/splunk/etc/auth',
       '/opt/splunk/var/log/splunk',
       '/opt/splunk/var/run/splunk',
-      '/opt/splunk/var/lib/splunk/kvstore/mongo',
-      '/opt/splunk/var/lib/splunk/kvstoreBackup',
+      '/opt/splunk/var/lib/splunk/kvstore/mongo',      '/opt/splunk/var/lib/splunk/kvstoreBackup',
     ];
     for (const d of splunkDirs) {
       fs.mkdirSync(d, { recursive: true });
@@ -755,8 +751,7 @@ case "\${CMD}" in
   stop)
     echo "Stopping splunkd... Shutting down.  Please wait, as this may take a few minutes."
     rm -f "\${PID_FILE}"
-    echo "Stopping splunk helpers... Done."
-    ;;
+    echo "Stopping splunk helpers... Done."    ;;
   restart)
     "$0" stop
     "$0" start
@@ -797,25 +792,20 @@ case "\${CMD}" in
     echo "Checking: /opt/splunk/etc/system/local/server.conf ... OK"
     echo "No spec file errors found."
     ;;
-  backup)
-    mkdir -p /opt/splunk/var/lib/splunk/kvstoreBackup
-    tar -czf /opt/splunk/var/lib/splunk/kvstoreBackup/kvstore_migration_backup.tar.gz -C /opt/splunk/etc/system local
+  backup)    mkdir -p /opt/splunk/var/lib/splunk/kvstoreBackup    tar -czf /opt/splunk/var/lib/splunk/kvstoreBackup/kvstore_migration_backup.tar.gz -C /opt/splunk/etc/system local
     echo "KV Store point-in-time backup archive created: /opt/splunk/var/lib/splunk/kvstoreBackup/kvstore_migration_backup.tar.gz"
     ;;
-  migrate)
-    echo "Migrating KV store storage engine to wiredTiger..."
+  migrate)    echo "Migrating KV store storage engine to wiredTiger..."
     echo "Storage engine migration to wiredTiger completed successfully."
     ;;
-  enable)
-    echo "Init script installed at /etc/systemd/system/Splunkd.service."
+  enable)    echo "Init script installed at /etc/systemd/system/Splunkd.service."
     echo "Init script is configured to run at boot (systemd-managed=1)."
     ;;
   *)
     echo "Splunk \${VER} (build \${BLD}) - executed: \${CMD} $*"
     ;;
 esac
-`;
-    fs.writeFileSync('/opt/splunk/bin/splunk', splunkCliScript, { encoding: 'utf-8', mode: 0o755 });
+`;    fs.writeFileSync('/opt/splunk/bin/splunk', splunkCliScript, { encoding: 'utf-8', mode: 0o755 });
     try {
       if (fs.existsSync('/usr/local/bin/splunk')) fs.unlinkSync('/usr/local/bin/splunk');
       fs.symlinkSync('/opt/splunk/bin/splunk', '/usr/local/bin/splunk');
@@ -913,103 +903,40 @@ esac
   }
 }
 
-// Initialize Ubuntu 20.04.6 LTS + Splunk 9.2.1 Lab on startup
-provisionUbuntu20Splunk9Lab(false);
+// Never provision or overwrite the host OS/Splunk paths automatically at server startup.
+// Lab provisioning is destructive and must only be run on a disposable isolated VM.
 
 let rootPortState: RootPortConfigState = {
   host: DEFAULT_CODESPACE_HOST,
   port: 9099,
-  usePortBridge: true,
-  connected: true,
-  lastVerifiedAt: new Date().toISOString(),
-  remoteUid: '0',
-  remoteUser: 'root',
-  remoteHostname: DEFAULT_CODESPACE_HOST,
-  remoteKernel: '5.4.0-174-generic (Ubuntu 20.04.6 LTS · GitHub Codespace Lab)',
-  localDaemonActive: true,
+  usePortBridge: false,
+  connected: false,
+  lastVerifiedAt: '',
+  remoteUid: '',
+  remoteUser: '',
+  remoteHostname: '',
+  remoteKernel: '',
+  localDaemonActive: false,
   localDaemonPort: 9099,
 };
 
 function executeCommandOverTcpRootPort(
-  host: string,
-  port: number,
-  command: string,
-  cwdPath: string,
-  timeoutMs = 30000
+  _host: string,
+  _port: number,
+  _command: string,
+  _cwdPath: string,
+  _timeoutMs = 30000
 ): Promise<{ stdout: string; stderr: string; exitCode: number }> {
-  return new Promise((resolve) => {
-    const socket = new net.Socket();
-    let rawOutput = '';
-    let resolved = false;
-
-    const connectHost = isLocalOrCodespaceBridgeHost(host) ? '127.0.0.1' : normalizeRootPortHost(host);
-    const connectPort = isLocalOrCodespaceBridgeHost(host) ? localRootDaemonPort : port;
-    const effectiveCommand = rewriteContainerKernelPaths(command);
-
-    const finish = (stdout: string, stderr: string, exitCode: number) => {
-      if (resolved) return;
-      resolved = true;
-      try {
-        socket.destroy();
-      } catch {
-        // ignore
-      }
-      resolve({ stdout, stderr, exitCode });
-    };
-
-    const timer = setTimeout(() => {
-      finish(rawOutput, '[TIMEOUT] زمان اجرای دستور روی پورت سرور به پایان رسید.', 124);
-    }, timeoutMs);
-
-    socket.connect(connectPort, connectHost, () => {
-      const wrappedScript = [
-        `export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$PATH`,
-        `cd "${cwdPath}" 2>/dev/null || cd /`,
-        `{`,
-        effectiveCommand,
-        `}`,
-        `__MAN7_RC=$?`,
-        `echo ""`,
-        `echo "__MAN7_EXIT_CODE:\${__MAN7_RC}__"`,
-        `exit \${__MAN7_RC}`,
-        ``,
-      ].join('\n');
-
-      socket.write(wrappedScript);
-    });
-
-    socket.on('data', (chunk) => {
-      if (rawOutput.length < 300000) {
-        rawOutput += chunk.toString('utf-8');
-      }
-      const match = rawOutput.match(/__MAN7_EXIT_CODE:(\d+)__/);
-      if (match) {
-        clearTimeout(timer);
-        const exitCode = Number(match[1]) || 0;
-        const cleaned = rawOutput.replace(/__MAN7_EXIT_CODE:\d+__\s*$/, '').trimEnd();
-        finish(cleaned, '', exitCode);
-      }
-    });
-
-    socket.on('close', () => {
-      clearTimeout(timer);
-      const match = rawOutput.match(/__MAN7_EXIT_CODE:(\d+)__/);
-      const exitCode = match ? Number(match[1]) : 0;
-      const cleaned = rawOutput.replace(/__MAN7_EXIT_CODE:\d+__\s*$/, '').trimEnd();
-      finish(cleaned, '', exitCode);
-    });
-
-    socket.on('error', (err) => {
-      clearTimeout(timer);
-      finish('', `خطا در اتصال به پورت Root سرور (${host}:${port}): ${err.message}`, 1);
-    });
+  return Promise.resolve({
+    stdout: '',
+    stderr: 'اجرای فرمان از طریق TCP Root Bridge حذف شده است. برای مدیریت راه دور باید SSH احراز هویت‌شده با Host Key pinning و sudo محدود پیاده‌سازی شود.',
+    exitCode: 126,
   });
 }
 
 function sanitizeFileName(name: string): string {
   return path.basename(name).replace(/[^a-zA-Z0-9._+-]/g, '_');
 }
-
 async function computeFileSha256(filePath: string): Promise<string> {
   return new Promise((resolve, reject) => {
     const hash = crypto.createHash('sha256');
@@ -1041,6 +968,89 @@ function resolveTargetInstallPath(category: DepotCategory, safeName: string, cus
 
 async function startServer() {
   const app = express();
+  app.disable('x-powered-by');
+  app.use((_req, res, next) => {
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('Referrer-Policy', 'no-referrer');
+    res.setHeader('X-Frame-Options', 'DENY');
+    res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
+    next();
+  });
+  if (process.env.MAN7_TRUST_PROXY === 'true') {
+    // Only enable behind exactly one trusted local reverse proxy; never expose the app directly.
+    app.set('trust proxy', 1);
+  }
+
+  app.get('/login', (_req, res) => {
+    res.type('html').send(`<!doctype html><html lang="fa" dir="rtl"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>ورود مدیر MAN7</title><body style="font-family:system-ui;max-width:420px;margin:12vh auto;padding:24px;background:#0b1220;color:#e5e7eb"><h2>ورود مدیر MAN7</h2><p>رمز مدیریتی تعریف‌شده در محیط سرور را وارد کنید.</p><form id="login"><input id="password" type="password" autocomplete="current-password" required style="box-sizing:border-box;width:100%;padding:12px;margin:12px 0"><button style="padding:10px 18px">ورود امن</button></form><p id="message" role="status"></p><script>document.getElementById('login').addEventListener('submit',async e=>{e.preventDefault();const message=document.getElementById('message');message.textContent='در حال بررسی...';try{const response=await fetch('/api/auth/login',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'same-origin',body:JSON.stringify({password:document.getElementById('password').value})});const data=await response.json();if(!response.ok)throw new Error(data.error||'ورود ناموفق بود');location.replace('/')}catch(error){message.textContent=error.message}})</script></body></html>`);
+  });
+
+  app.post('/api/auth/login', express.json({ limit: '4kb' }), (req, res) => {
+    const configuredPassword = process.env.MAN7_ADMIN_PASSWORD || '';
+    if (configuredPassword.length < 24) {
+      res.status(503).json({ error: 'MAN7_ADMIN_PASSWORD باید حداقل ۲۴ کاراکتر تصادفی داشته باشد.' });
+      return;
+    }
+    if (!isSameOriginRequest(req)) {
+      res.status(403).json({ error: 'درخواست ورود cross-origin یا بدون Origin رد شد.' });
+      return;
+    }
+    const ip = req.ip || req.socket.remoteAddress || 'unknown';
+    const now = Date.now();
+    const attempts = failedAdminLogins.get(ip);
+    if (attempts && now - attempts.windowStartedAt < 15 * 60 * 1000 && attempts.count >= 10) {
+      res.status(429).json({ error: 'تعداد تلاش‌های ورود بیش از حد مجاز است؛ ۱۵ دقیقه بعد تلاش کنید.' });
+      return;
+    }
+    const suppliedPassword = typeof req.body?.password === 'string' ? req.body.password : '';
+    const expected = Buffer.from(configuredPassword);
+    const supplied = Buffer.from(suppliedPassword);
+    const valid = supplied.length === expected.length && crypto.timingSafeEqual(supplied, expected);
+    if (!valid) {
+      const current = attempts && now - attempts.windowStartedAt < 15 * 60 * 1000
+        ? attempts
+        : { count: 0, windowStartedAt: now };
+      current.count += 1;
+      failedAdminLogins.set(ip, current);
+      res.status(401).json({ error: 'رمز مدیریتی نادرست است.' });
+      return;
+    }
+    failedAdminLogins.delete(ip);
+    const token = crypto.randomBytes(32).toString('hex');    adminSessions.set(token, now + ADMIN_SESSION_TTL_MS);
+    res.cookie(ADMIN_SESSION_COOKIE, token, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'strict',
+      path: '/',
+      maxAge: ADMIN_SESSION_TTL_MS,
+    });
+    res.json({ ok: true, expiresInSeconds: ADMIN_SESSION_TTL_MS / 1000 });
+  });
+
+  // All API endpoints are private by default except the explicit login and OAuth bootstrap routes.
+  app.use('/api', (req, res, next) => {
+    if (req.path === '/auth/login' || req.path === '/auth/url' || req.path === '/auth/callback' || req.path === '/auth/callback/') {
+      next();
+      return;
+    }
+    requireAdminSession(req, res, next);
+  });
+
+  app.get('/api/auth/session', (_req, res) => {
+    res.json({ authenticated: true, expiresInSeconds: ADMIN_SESSION_TTL_MS / 1000 });
+  });
+
+  app.post('/api/auth/logout', (req, res) => {
+    const token = readCookie(req, ADMIN_SESSION_COOKIE);
+    if (token) adminSessions.delete(token);
+    res.clearCookie(ADMIN_SESSION_COOKIE, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'strict',
+      path: '/',
+    });
+    res.json({ ok: true });
+  });
 
   app.use('/api/terminal', express.json({ limit: '10mb' }));
   app.use('/api/root-port', express.json({ limit: '10mb' }));
@@ -1091,8 +1101,7 @@ async function startServer() {
       totalMemGb: (os.totalmem() / (1024 ** 3)).toFixed(2),
       freeMemGb: (os.freemem() / (1024 ** 3)).toFixed(2),
       avxSupported,
-      thpStatus,
-      depotRoot: INSTALL_STAGE_ROOT,
+      thpStatus,      depotRoot: INSTALL_STAGE_ROOT,
       uptimeSeconds: Math.floor(os.uptime()),
       currentUser: os.userInfo().username,
       rootPortState,
@@ -1197,23 +1206,18 @@ async function startServer() {
 
     res.json({ ok: true, state: rootPortState });
   });
-
   // 2. Live Linux Shell Command Execution Engine (Executes via configured Root Port or direct local /bin/bash)
   app.post('/api/terminal/exec', async (req, res) => {
-    const { command, workingDir, stepContextFA } = req.body as {
-      command?: string;
+    const { command, workingDir, stepContextFA } = req.body as {      command?: string;
       workingDir?: string;
       stepContextFA?: string;
     };
     if (!command || typeof command !== 'string' || !command.trim()) {
-      res.status(400).json({ error: 'دستور شل معتبر وارد نشده است.' });
-      return;
+      res.status(400).json({ error: 'دستور شل معتبر وارد نشده است.' });      return;
     }
-
     const resolvedCwd =
       workingDir === 'install_stage'
-        ? INSTALL_STAGE_ROOT
-        : workingDir === 'var_tmp'
+        ? INSTALL_STAGE_ROOT        : workingDir === 'var_tmp'
         ? VAR_TMP_ROOT
         : workingDir === 'depot'
         ? DEPOT_ROOT
@@ -1295,8 +1299,7 @@ async function startServer() {
         exitCode: code ?? (killedByTimeout ? 124 : 1),
         stdout,
         stderr: finalStderr,
-        durationMs,
-        timestamp: new Date().toISOString(),
+        durationMs,        timestamp: new Date().toISOString(),
       };
 
       executionHistory = [entry, ...executionHistory].slice(0, 100);
@@ -1398,25 +1401,20 @@ async function startServer() {
     const safeName = sanitizeFileName(decodeURIComponent(rawName));
     const depotPath = path.join(DEPOT_ROOT, category, safeName);
     const targetInstallPath = resolveTargetInstallPath(category, safeName, customTargetDir);
-
     try {
       fs.mkdirSync(path.dirname(targetInstallPath), { recursive: true });
-    } catch {
-      // ignore if permission restricted
+    } catch {      // ignore if permission restricted
     }
 
     const hash = crypto.createHash('sha256');
     const writeStream = fs.createWriteStream(depotPath);
     let bytesWritten = 0;
-
     req.on('data', (chunk: Buffer) => {
       bytesWritten += chunk.length;
       hash.update(chunk);
     });
 
-    req.pipe(writeStream);
-
-    writeStream.on('finish', async () => {
+    req.pipe(writeStream);    writeStream.on('finish', async () => {
       const sha256 = hash.digest('hex');
       const isExecutable = category === 'scripts' || safeName.endsWith('.sh') || safeName.endsWith('.py');
 
@@ -1499,8 +1497,7 @@ async function startServer() {
       }
       const validCat: DepotCategory = DEPOT_CATEGORIES.includes(category) ? category : 'scripts';
       const safeName = sanitizeFileName(filename);
-      const depotPath = path.join(DEPOT_ROOT, validCat, safeName);
-      const targetInstallPath = resolveTargetInstallPath(validCat, safeName, targetDir);
+      const depotPath = path.join(DEPOT_ROOT, validCat, safeName);      const targetInstallPath = resolveTargetInstallPath(validCat, safeName, targetDir);
 
       fs.writeFileSync(depotPath, content, { encoding: 'utf-8', mode: 0o755 });
 
@@ -1597,13 +1594,11 @@ async function startServer() {
     tarProc.stdout.pipe(res);
     tarProc.on('error', () => {
       if (!res.headersSent) {
-        res.status(500).end('Failed to generate release archive');
-      }
+        res.status(500).end('Failed to generate release archive');      }
     });
   });
 
-  app.get('/api/release/download-windows-zip', (_req, res) => {
-    res.setHeader('Content-Type', 'application/zip');
+  app.get('/api/release/download-windows-zip', (_req, res) => {    res.setHeader('Content-Type', 'application/zip');
     res.setHeader('Content-Disposition', 'attachment; filename="MAN7-Windows-Portable.zip"');
 
     const pyScript = `
@@ -1611,17 +1606,14 @@ import os, sys, zipfile
 
 root_dir = sys.argv[1]
 exclude_dirs = {'node_modules', '.git', '.playwright-cli', 'dist'}
-
 with zipfile.ZipFile(sys.stdout.buffer, 'w', zipfile.ZIP_DEFLATED) as zf:
     for base, dirs, files in os.walk(root_dir):
         dirs[:] = [d for d in dirs if d not in exclude_dirs]
         rel_base = os.path.relpath(base, root_dir)
         if rel_base.startswith('offline-depot/splunk_bins') or rel_base.startswith('offline-depot/rpms'):
             continue
-        for f in files:
-            full_path = os.path.join(base, f)
-            arcname = os.path.join('MAN7', os.path.relpath(full_path, root_dir)).replace('\\\\', '/')
-            try:
+        for f in files:            full_path = os.path.join(base, f)
+            arcname = os.path.join('MAN7', os.path.relpath(full_path, root_dir)).replace('\\\\', '/')            try:
                 zf.write(full_path, arcname)
             except Exception:
                 pass
@@ -1665,6 +1657,7 @@ with zipfile.ZipFile(sys.stdout.buffer, 'w', zipfile.ZIP_DEFLATED) as zf:
   }
 
   const GITHUB_SESSION_FILE = path.join(DEPOT_ROOT, 'logs', 'github_session.json');
+  const githubOAuthStates = new Map<string, number>();
   const GITHUB_SYNC_CONFIG_FILE = path.join(ROOT_DIR, '.github-sync.json');
 
   function loadGithubSession(): GitHubAuthSession | null {
@@ -1688,14 +1681,23 @@ with zipfile.ZipFile(sys.stdout.buffer, 'w', zipfile.ZIP_DEFLATED) as zf:
   }
 
   let githubSession: GitHubAuthSession | null = loadGithubSession();
+  function publicGithubSession(session: GitHubAuthSession | null) {
+    if (!session) return null;
+    const { accessToken: _accessToken, ...safeSession } = session;
+    return safeSession;
+  }
+
 
   function saveGithubSession(session: GitHubAuthSession | null) {
     githubSession = session;
     try {
       if (session) {
         const payload = JSON.stringify(session, null, '  ');
-        fs.writeFileSync(GITHUB_SESSION_FILE, payload, 'utf-8');
-        fs.writeFileSync(GITHUB_SYNC_CONFIG_FILE, payload, 'utf-8');
+        fs.mkdirSync(path.dirname(GITHUB_SESSION_FILE), { recursive: true, mode: 0o700 });
+        fs.writeFileSync(GITHUB_SESSION_FILE, payload, { encoding: 'utf-8', mode: 0o600 });
+        fs.chmodSync(GITHUB_SESSION_FILE, 0o600);
+        fs.writeFileSync(GITHUB_SYNC_CONFIG_FILE, payload, { encoding: 'utf-8', mode: 0o600 });
+        fs.chmodSync(GITHUB_SYNC_CONFIG_FILE, 0o600);
       } else {
         if (fs.existsSync(GITHUB_SESSION_FILE)) fs.unlinkSync(GITHUB_SESSION_FILE);
         if (fs.existsSync(GITHUB_SYNC_CONFIG_FILE)) fs.unlinkSync(GITHUB_SYNC_CONFIG_FILE);
@@ -1704,7 +1706,6 @@ with zipfile.ZipFile(sys.stdout.buffer, 'w', zipfile.ZIP_DEFLATED) as zf:
       // ignore
     }
   }
-
   function resolveAppBaseUrl(req: express.Request): string {
     if (process.env.APP_URL) {
       return process.env.APP_URL.replace(/\/+$/, '');
@@ -1797,14 +1798,12 @@ with zipfile.ZipFile(sys.stdout.buffer, 'w', zipfile.ZIP_DEFLATED) as zf:
       });
       if (!createResp.ok) {
         const errJson = await createResp.json().catch(() => ({}));
-        throw new Error((errJson as { message?: string }).message || 'خطا در ساخت مخزن MAN7 روی GitHub');
-      }
+        throw new Error((errJson as { message?: string }).message || 'خطا در ساخت مخزن MAN7 روی GitHub');      }
       await new Promise((r) => setTimeout(r, 1500));
     }
 
     // 2. Get latest commit SHA on target branch (if exists)
-    let latestCommitSha: string | null = null;
-    const refResp = await fetch(`https://api.github.com/repos/${owner}/${repoName}/git/ref/heads/${branch}`, {
+    let latestCommitSha: string | null = null;    const refResp = await fetch(`https://api.github.com/repos/${owner}/${repoName}/git/ref/heads/${branch}`, {
       headers: ghHeaders,
     });
     if (refResp.ok) {
@@ -1821,12 +1820,10 @@ with zipfile.ZipFile(sys.stdout.buffer, 'w', zipfile.ZIP_DEFLATED) as zf:
       sha: string;
     }> = [];
 
-    for (const file of files) {
-      const contentB64 = fs.readFileSync(file.fullPath).toString('base64');
+    for (const file of files) {      const contentB64 = fs.readFileSync(file.fullPath).toString('base64');
       const blobResp = await fetch(`https://api.github.com/repos/${owner}/${repoName}/git/blobs`, {
         method: 'POST',
-        headers: ghHeaders,
-        body: JSON.stringify({
+        headers: ghHeaders,        body: JSON.stringify({
           content: contentB64,
           encoding: 'base64',
         }),
@@ -1907,8 +1904,7 @@ with zipfile.ZipFile(sys.stdout.buffer, 'w', zipfile.ZIP_DEFLATED) as zf:
         }),
       });
     } else {
-      await fetch(`https://api.github.com/repos/${owner}/${repoName}/git/refs`, {
-        method: 'POST',
+      await fetch(`https://api.github.com/repos/${owner}/${repoName}/git/refs`, {        method: 'POST',
         headers: ghHeaders,
         body: JSON.stringify({
           ref: `refs/heads/${branch}`,
@@ -1949,11 +1945,21 @@ with zipfile.ZipFile(sys.stdout.buffer, 'w', zipfile.ZIP_DEFLATED) as zf:
       return;
     }
 
+    const state = crypto.randomBytes(32).toString('hex');
+    githubOAuthStates.set(state, Date.now() + 10 * 60 * 1000);
+    res.cookie('man7_github_oauth_state', state, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      path: '/auth/callback',
+      maxAge: 10 * 60 * 1000,
+    });
     const params = new URLSearchParams({
       client_id: clientId,
       redirect_uri: redirectUri,
       scope: 'repo read:user',
       allow_signup: 'true',
+      state,
     });
 
     res.json({
@@ -1965,6 +1971,21 @@ with zipfile.ZipFile(sys.stdout.buffer, 'w', zipfile.ZIP_DEFLATED) as zf:
 
   const githubCallbackHandler: express.RequestHandler = async (req, res) => {
     const code = String(req.query.code || '');
+    const state = String(req.query.state || '');
+    const stateExpiry = state ? githubOAuthStates.get(state) : undefined;
+    const browserState = readCookie(req, 'man7_github_oauth_state');
+    res.clearCookie('man7_github_oauth_state', {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      path: '/auth/callback',
+    });
+    if (!state || !browserState || state !== browserState || !stateExpiry || stateExpiry <= Date.now()) {
+      if (state) githubOAuthStates.delete(state);
+      res.status(400).send('درخواست OAuth نامعتبر یا منقضی شده است. ورود را دوباره آغاز کنید.');
+      return;
+    }
+    githubOAuthStates.delete(state);
     const clientId = process.env.CLIENT_ID || process.env.GITHUB_CLIENT_ID || '';
     const clientSecret = process.env.CLIENT_SECRET || process.env.GITHUB_CLIENT_SECRET || '';
     const redirectUri = `${resolveAppBaseUrl(req)}/auth/callback`;
@@ -1997,15 +2018,13 @@ with zipfile.ZipFile(sys.stdout.buffer, 'w', zipfile.ZIP_DEFLATED) as zf:
       });
       const tokenData = (await tokenResp.json()) as { access_token?: string; error_description?: string };
       if (!tokenData.access_token) {
-        throw new Error(tokenData.error_description || 'عدم دریافت توکن دسترسی از GitHub');
-      }
+        throw new Error(tokenData.error_description || 'عدم دریافت توکن دسترسی از GitHub');      }
 
       const userResp = await fetch('https://api.github.com/user', {
         headers: {
           Authorization: `Bearer ${tokenData.access_token}`,
           Accept: 'application/vnd.github+json',
-          'User-Agent': 'MAN7-AirGap-Suite',
-        },
+          'User-Agent': 'MAN7-AirGap-Suite',        },
       });
       if (!userResp.ok) {
         throw new Error('خطا در دریافت پروفایل کاربری GitHub');
@@ -2014,8 +2033,7 @@ with zipfile.ZipFile(sys.stdout.buffer, 'w', zipfile.ZIP_DEFLATED) as zf:
         login: string;
         name?: string;
         avatar_url?: string;
-        html_url?: string;
-      };
+        html_url?: string;      };
 
       saveGithubSession({
         accessToken: tokenData.access_token,
@@ -2024,26 +2042,24 @@ with zipfile.ZipFile(sys.stdout.buffer, 'w', zipfile.ZIP_DEFLATED) as zf:
         avatarUrl: userData.avatar_url || '',
         htmlUrl: userData.html_url || `https://github.com/${userData.login}`,
         connectedAt: new Date().toISOString(),
-        repoName: 'MAN7',
-        branch: 'main',
-        autoSync: true,
+        repoName: 'MAN7',        branch: 'security/production-readiness-audit',
+        autoSync: false,
       });
 
-      // Trigger immediate automatic push in background upon login
-      pushWorkspaceToGithub({ repoName: 'MAN7', branch: 'main' }).catch(() => null);
-
+      // Do not push workspace changes automatically during OAuth login.
+      // Repository writes require an explicit operator action.
       res.send(`
         <html>
           <body style="font-family: sans-serif; background: #090d16; color: #10b981; padding: 24px; text-align: center;">
             <script>
               if (window.opener) {
-                window.opener.postMessage({ type: 'OAUTH_AUTH_SUCCESS' }, '*');
+                window.opener.postMessage({ type: 'OAUTH_AUTH_SUCCESS' }, window.location.origin);
                 window.close();
               } else {
                 window.location.href = '/';
               }
             </script>
-            <p>اتصال به حساب GitHub (${userData.login}) و فعال‌سازی آپدیت خودکار انجام شد. این پنجره بسته می‌شود.</p>
+            <p>حساب GitHub (${userData.login}) متصل شد. برای مدیریت MAN7 ابتدا با رمز مدیر وارد شوید. این پنجره بسته می‌شود.</p>
           </body>
         </html>
       `);
@@ -2065,7 +2081,7 @@ with zipfile.ZipFile(sys.stdout.buffer, 'w', zipfile.ZIP_DEFLATED) as zf:
   app.post('/api/github/connect-token', express.json(), async (req, res) => {
     const token = String(req.body?.token || '').trim();
     const repoName = String(req.body?.repoName || 'MAN7').trim() || 'MAN7';
-    const branch = String(req.body?.branch || 'main').trim() || 'main';
+    const branch = String(req.body?.branch || 'security/production-readiness-audit').trim() || 'security/production-readiness-audit';
     const privateRepo = Boolean(req.body?.privateRepo);
 
     if (!token) {
@@ -2105,16 +2121,14 @@ with zipfile.ZipFile(sys.stdout.buffer, 'w', zipfile.ZIP_DEFLATED) as zf:
         repoName,
         branch,
         privateRepo,
-        autoSync: true,
+        autoSync: false,
       });
 
-      // Immediately sync the repository after connecting!
-      const syncResult = await pushWorkspaceToGithub({ repoName, branch, privateRepo });
-
+      // Connecting credentials must not implicitly write to a repository.
       res.json({
         ok: true,
-        user: githubSession,
-        syncResult,
+        user: publicGithubSession(githubSession),
+        syncResult: null,
       });
     } catch (err) {
       res.status(500).json({ error: (err as Error).message });
@@ -2139,7 +2153,7 @@ with zipfile.ZipFile(sys.stdout.buffer, 'w', zipfile.ZIP_DEFLATED) as zf:
       branch,
       privateRepo,
     });
-    res.json({ ok: true, user: githubSession });
+    res.json({ ok: true, user: publicGithubSession(githubSession) });
   });
 
   app.get('/api/github/status', (req, res) => {
@@ -2193,20 +2207,22 @@ with zipfile.ZipFile(sys.stdout.buffer, 'w', zipfile.ZIP_DEFLATED) as zf:
 
   // Wipe previous repo files/history on GitHub, push Ubuntu 20.04 + Splunk 9.2.1 Lab (.devcontainer + workflow), and trigger GitHub Actions Lab
   app.post('/api/github/provision-lab', express.json(), async (req, res) => {
+    if (process.env.MAN7_ENABLE_DESTRUCTIVE_LAB_PROVISIONING !== 'true') {
+      res.status(503).json({ error: 'Provisioning آزمایشگاه قدیمی غیرفعال است؛ این قابلیت فقط برای VM یک‌بارمصرف و ایزوله مجاز است.' });
+      return;
+    }
     try {
       // Also reset the local Ubuntu 20.04 + Splunk 9.2.1 lab cleanly
       provisionUbuntu20Splunk9Lab(true);
 
-      const repoName = String(req.body?.repoName || githubSession?.repoName || 'MAN7').trim() || 'MAN7';
-      const branch = String(req.body?.branch || githubSession?.branch || 'main').trim() || 'main';
+      const repoName = String(req.body?.repoName || githubSession?.repoName || 'MAN7').trim() || 'MAN7';      const branch = String(req.body?.branch || githubSession?.branch || 'main').trim() || 'main';
       const privateRepo =
         req.body?.privateRepo !== undefined ? Boolean(req.body.privateRepo) : Boolean(githubSession?.privateRepo);
 
       const syncResult = await pushWorkspaceToGithub({
         repoName,
         branch,
-        privateRepo,
-        cleanPreviousHistory: true,
+        privateRepo,        cleanPreviousHistory: true,
         commitMessage: `feat(lab): clean previous files & provision Ubuntu 20.04 LTS + Splunk 9.2.1 Lab environment`,
       });
 
@@ -2218,8 +2234,7 @@ with zipfile.ZipFile(sys.stdout.buffer, 'w', zipfile.ZIP_DEFLATED) as zf:
             `https://api.github.com/repos/${githubSession.login}/${repoName}/actions/workflows/ubuntu20-splunk9-lab.yml/dispatches`,
             {
               method: 'POST',
-              headers: {
-                Authorization: `Bearer ${githubSession.accessToken}`,
+              headers: {                Authorization: `Bearer ${githubSession.accessToken}`,
                 Accept: 'application/vnd.github+json',
                 'Content-Type': 'application/json',
                 'User-Agent': 'MAN7-AirGap-Suite',
@@ -2229,16 +2244,14 @@ with zipfile.ZipFile(sys.stdout.buffer, 'w', zipfile.ZIP_DEFLATED) as zf:
                 inputs: { clean_previous: 'true' },
               }),
             }
-          );
-          workflowTriggered = dispatchResp.ok || dispatchResp.status === 204;
+          );          workflowTriggered = dispatchResp.ok || dispatchResp.status === 204;
         } catch {
           // ignore if workflow dispatch is already triggered by push event
         }
       }
 
       res.json({
-        ok: true,
-        ...syncResult,
+        ok: true,        ...syncResult,
         workflowTriggered: true,
         codespacesUrl: `${syncResult.repoUrl}/codespaces`,
         actionsUrl: `${syncResult.repoUrl}/actions`,
@@ -2292,6 +2305,10 @@ with zipfile.ZipFile(sys.stdout.buffer, 'w', zipfile.ZIP_DEFLATED) as zf:
   });
 
   app.post('/api/lab/reset', express.json(), async (req, res) => {
+    if (process.env.MAN7_ENABLE_DESTRUCTIVE_LAB_PROVISIONING !== 'true') {
+      res.status(503).json({ error: 'بازنشانی Lab قدیمی غیرفعال است؛ از VM یک‌بارمصرف و ایزوله استفاده کنید.' });
+      return;
+    }
     const requestedHost = normalizeRootPortHost(req.body?.host || DEFAULT_CODESPACE_HOST);
     provisionUbuntu20Splunk9Lab(true);
     await startLocalRootPortListener(9099);
@@ -2299,25 +2316,29 @@ with zipfile.ZipFile(sys.stdout.buffer, 'w', zipfile.ZIP_DEFLATED) as zf:
       host: requestedHost,
       port: 9099,
       usePortBridge: true,
-      connected: true,
-      lastVerifiedAt: new Date().toISOString(),
-      remoteUid: '0',
-      remoteUser: 'root',
-      remoteHostname: requestedHost,
-      remoteKernel: '5.4.0-174-generic (Ubuntu 20.04.6 LTS · GitHub Codespace Lab)',
-      localDaemonActive: true,
+      connected: false,
+      lastVerifiedAt: '',
+      remoteUid: '',
+      remoteUser: '',
+      remoteHostname: '',
+      remoteKernel: '',
+      localDaemonActive: Boolean(localRootTcpServer?.listening),
       localDaemonPort: 9099,
     };
 
     res.json({
       ok: true,
-      message: `تمام فایل‌ها و تست‌های قبلی پاکسازی شدند و محیط آزمایشگاهی Ubuntu 20.04.6 LTS + Splunk 9 به محیط GitHub Codespace (${requestedHost}:9099) متصل شد.`,
+      message: 'محیط آزمایشگاهی بازنشانی شد؛ اتصال Root تا زمان برقراری و اعتبارسنجی اتصال واقعی غیرفعال است.',
       rootPortState,
       lastResetAt: splunkLabLastResetAt,
     });
   });
 
   app.post('/api/lab/run-e2e', express.json(), async (_req, res) => {
+    if (process.env.MAN7_ENABLE_DESTRUCTIVE_LAB_PROVISIONING !== 'true') {
+      res.status(503).json({ error: 'E2E آزمایشگاه قدیمی غیرفعال است؛ ابتدا محیط VM یک‌بارمصرف و ایزوله را آماده کنید.' });
+      return;
+    }
     provisionUbuntu20Splunk9Lab(false);
     await startLocalRootPortListener(9099);
 
@@ -2397,8 +2418,7 @@ with zipfile.ZipFile(sys.stdout.buffer, 'w', zipfile.ZIP_DEFLATED) as zf:
         titleFA: 'گام ۳: اجرای واقعی اسکریپت گام A (step_a_online_collector.sh) و ساخت باندل آفلاین .tar.gz با مانیفست SHA-256',
         command:
           'bash /opt/splunk-airgap/scripts/step_a_online_collector.sh && ls -lh /var/tmp/man7-offline-kit-ubuntu-20.04-lts.tar.gz && cat /var/tmp/man7-offline-kit-ubuntu-20.04-lts.tar.gz.sha256',
-      },
-      {
+      },      {
         stageNumber: 4,
         titleFA: 'گام ۴: پالایش کانفیگ‌های قدیمی (.conf Sanitizer)، استقرار در /opt/splunk/etc/system/local و تایید با btool check',
         command:
@@ -2406,8 +2426,7 @@ with zipfile.ZipFile(sys.stdout.buffer, 'w', zipfile.ZIP_DEFLATED) as zf:
       },
       {
         stageNumber: 5,
-        titleFA: 'گام ۵: اجرای واقعی اسکریپت گام B (step_b_offline_rhel_deployer.sh) — ایمن‌سازی کرنل و ارتقاء چندمرحله‌ای (8.1.14 → 8.2.12 → 9.0.9 → 9.3.2)',
-        command:
+        titleFA: 'گام ۵: اجرای واقعی اسکریپت گام B (step_b_offline_rhel_deployer.sh) — ایمن‌سازی کرنل و ارتقاء چندمرحله‌ای (8.1.14 → 8.2.12 → 9.0.9 → 9.3.2)',        command:
           'bash /opt/splunk-airgap/scripts/step_b_offline_rhel_deployer.sh && /opt/splunk/bin/splunk version && /opt/splunk/bin/splunk status',
       },
       {
@@ -2420,8 +2439,7 @@ with zipfile.ZipFile(sys.stdout.buffer, 'w', zipfile.ZIP_DEFLATED) as zf:
     for (const item of commandsToTest) {
       const t0 = Date.now();
       const result = await executeCommandOverTcpRootPort(
-        rootPortState.host || DEFAULT_CODESPACE_HOST,
-        rootPortState.port || 9099,
+        rootPortState.host || DEFAULT_CODESPACE_HOST,        rootPortState.port || 9099,
         item.command,
         '/opt/splunk-airgap',
         45000
@@ -2432,8 +2450,7 @@ with zipfile.ZipFile(sys.stdout.buffer, 'w', zipfile.ZIP_DEFLATED) as zf:
         command: item.command,
         cwd: `root@${rootPortState.host || DEFAULT_CODESPACE_HOST}:9099 (/opt/splunk-airgap)`,
         exitCode: result.exitCode,
-        stdout: result.stdout,
-        stderr: result.stderr,
+        stdout: result.stdout,        stderr: result.stderr,
         durationMs,
         timestamp: new Date().toISOString(),
         viaRootPort: `${rootPortState.host || DEFAULT_CODESPACE_HOST}:9099`,
@@ -2442,8 +2459,7 @@ with zipfile.ZipFile(sys.stdout.buffer, 'w', zipfile.ZIP_DEFLATED) as zf:
       recordAndEchoCodespaceTerminal(entry);
       stages.push({
         stageNumber: item.stageNumber,
-        titleFA: item.titleFA,
-        command: item.command,
+        titleFA: item.titleFA,        command: item.command,
         exitCode: result.exitCode,
         stdout: result.stdout || result.stderr,
         durationMs,
@@ -2501,10 +2517,10 @@ with zipfile.ZipFile(sys.stdout.buffer, 'w', zipfile.ZIP_DEFLATED) as zf:
     });
   }
 
-  app.listen(PORT, '0.0.0.0', () => {
-    console.log(`[MAN7] Full-Stack Server listening on http://0.0.0.0:${PORT}`);
+  const bindHost = process.env.MAN7_BIND_HOST || (process.env.K_SERVICE ? '0.0.0.0' : '127.0.0.1');
+  app.listen(PORT, bindHost, () => {
+    console.log(`[MAN7] Full-Stack Server listening on http://${bindHost}:${PORT}`);
   });
 }
 
 startServer();
-

@@ -32,8 +32,8 @@ for pkg in glibc glibc-common libxcrypt-compat policycoreutils policycoreutils-p
     if [ -f "/opt/splunk-airgap/rpms/${pkg}-1.0.el9.x86_64.rpm" ]; then
       cp -f "/opt/splunk-airgap/rpms/${pkg}-1.0.el9.x86_64.rpm" "${RPM_DIR}/"
     else
-      printf "RPM_PACKAGE_BINARY:%s:OS=%s
-" "${pkg}" "RHEL 9.4" > "${RPM_DIR}/${pkg}-1.0.el9.x86_64.rpm"
+      echo "ERROR: Required RPM '${pkg}' was not downloaded or found in the trusted local cache." >&2
+      exit 1
     fi
   fi
 done
@@ -47,13 +47,11 @@ if [ -f "/opt/splunk-airgap/splunk_bins/splunk-8.2.12-22f9d4c0a17b-Linux-x86_64.
   cp -f "/opt/splunk-airgap/splunk_bins/splunk-8.2.12-22f9d4c0a17b-Linux-x86_64.tgz" "${SPLUNK_BIN_DIR}/splunk-8.2.12-22f9d4c0a17b-Linux-x86_64.tgz"
 elif [ ! -f "${SPLUNK_BIN_DIR}/splunk-8.2.12-22f9d4c0a17b-Linux-x86_64.tgz" ]; then
   echo "  -> Checking local cache or fetching splunk-8.2.12-22f9d4c0a17b-Linux-x86_64.tgz..."
-  if ! curl -fsSL --connect-timeout 4 --max-time 10 -o "${SPLUNK_BIN_DIR}/splunk-8.2.12-22f9d4c0a17b-Linux-x86_64.tgz" "https://download.splunk.com/products/splunk/releases/8.2.12/linux/splunk-8.2.12-22f9d4c0a17b-Linux-x86_64.tgz" 2>/dev/null; then
-    mkdir -p "/tmp/splunk-pkg-build-8.2.12/splunk/etc" "/tmp/splunk-pkg-build-8.2.12/splunk/bin"
-    printf "VERSION=8.2.12\nBUILD=22f9d4c0a17b\nPRODUCT=splunk\nPLATFORM=Linux-x86_64\n" > "/tmp/splunk-pkg-build-8.2.12/splunk/etc/splunk.version"
-    [ -f /opt/splunk/bin/splunk ] && cp -f /opt/splunk/bin/splunk "/tmp/splunk-pkg-build-8.2.12/splunk/bin/splunk"
-    tar -czf "${SPLUNK_BIN_DIR}/splunk-8.2.12-22f9d4c0a17b-Linux-x86_64.tgz" -C "/tmp/splunk-pkg-build-8.2.12" splunk
-    rm -rf "/tmp/splunk-pkg-build-8.2.12"
+  if ! curl -fsSL --connect-timeout 10 --max-time 600 -o "${SPLUNK_BIN_DIR}/splunk-8.2.12-22f9d4c0a17b-Linux-x86_64.tgz" "https://download.splunk.com/products/splunk/releases/8.2.12/linux/splunk-8.2.12-22f9d4c0a17b-Linux-x86_64.tgz"; then
+    echo "ERROR: Failed to download official Splunk package splunk-8.2.12-22f9d4c0a17b-Linux-x86_64.tgz; refusing to create a placeholder." >&2
+    exit 1
   fi
+  tar -tzf "${SPLUNK_BIN_DIR}/splunk-8.2.12-22f9d4c0a17b-Linux-x86_64.tgz" >/dev/null
 fi
 
 # Hop 2: splunk-9.0.9-6315942c563f-Linux-x86_64.tgz (Splunk 9.0.9)
@@ -62,13 +60,11 @@ if [ -f "/opt/splunk-airgap/splunk_bins/splunk-9.0.9-6315942c563f-Linux-x86_64.t
   cp -f "/opt/splunk-airgap/splunk_bins/splunk-9.0.9-6315942c563f-Linux-x86_64.tgz" "${SPLUNK_BIN_DIR}/splunk-9.0.9-6315942c563f-Linux-x86_64.tgz"
 elif [ ! -f "${SPLUNK_BIN_DIR}/splunk-9.0.9-6315942c563f-Linux-x86_64.tgz" ]; then
   echo "  -> Checking local cache or fetching splunk-9.0.9-6315942c563f-Linux-x86_64.tgz..."
-  if ! curl -fsSL --connect-timeout 4 --max-time 10 -o "${SPLUNK_BIN_DIR}/splunk-9.0.9-6315942c563f-Linux-x86_64.tgz" "https://download.splunk.com/products/splunk/releases/9.0.9/linux/splunk-9.0.9-6315942c563f-Linux-x86_64.tgz" 2>/dev/null; then
-    mkdir -p "/tmp/splunk-pkg-build-9.0.9/splunk/etc" "/tmp/splunk-pkg-build-9.0.9/splunk/bin"
-    printf "VERSION=9.0.9\nBUILD=6315942c563f\nPRODUCT=splunk\nPLATFORM=Linux-x86_64\n" > "/tmp/splunk-pkg-build-9.0.9/splunk/etc/splunk.version"
-    [ -f /opt/splunk/bin/splunk ] && cp -f /opt/splunk/bin/splunk "/tmp/splunk-pkg-build-9.0.9/splunk/bin/splunk"
-    tar -czf "${SPLUNK_BIN_DIR}/splunk-9.0.9-6315942c563f-Linux-x86_64.tgz" -C "/tmp/splunk-pkg-build-9.0.9" splunk
-    rm -rf "/tmp/splunk-pkg-build-9.0.9"
+  if ! curl -fsSL --connect-timeout 10 --max-time 600 -o "${SPLUNK_BIN_DIR}/splunk-9.0.9-6315942c563f-Linux-x86_64.tgz" "https://download.splunk.com/products/splunk/releases/9.0.9/linux/splunk-9.0.9-6315942c563f-Linux-x86_64.tgz"; then
+    echo "ERROR: Failed to download official Splunk package splunk-9.0.9-6315942c563f-Linux-x86_64.tgz; refusing to create a placeholder." >&2
+    exit 1
   fi
+  tar -tzf "${SPLUNK_BIN_DIR}/splunk-9.0.9-6315942c563f-Linux-x86_64.tgz" >/dev/null
 fi
 
 # Hop 3: splunk-9.3.2-d8bb31091f42-Linux-x86_64.tgz (Splunk 9.3.2)
@@ -77,20 +73,27 @@ if [ -f "/opt/splunk-airgap/splunk_bins/splunk-9.3.2-d8bb31091f42-Linux-x86_64.t
   cp -f "/opt/splunk-airgap/splunk_bins/splunk-9.3.2-d8bb31091f42-Linux-x86_64.tgz" "${SPLUNK_BIN_DIR}/splunk-9.3.2-d8bb31091f42-Linux-x86_64.tgz"
 elif [ ! -f "${SPLUNK_BIN_DIR}/splunk-9.3.2-d8bb31091f42-Linux-x86_64.tgz" ]; then
   echo "  -> Checking local cache or fetching splunk-9.3.2-d8bb31091f42-Linux-x86_64.tgz..."
-  if ! curl -fsSL --connect-timeout 4 --max-time 10 -o "${SPLUNK_BIN_DIR}/splunk-9.3.2-d8bb31091f42-Linux-x86_64.tgz" "https://download.splunk.com/products/splunk/releases/9.3.2/linux/splunk-9.3.2-d8bb31091f42-Linux-x86_64.tgz" 2>/dev/null; then
-    mkdir -p "/tmp/splunk-pkg-build-9.3.2/splunk/etc" "/tmp/splunk-pkg-build-9.3.2/splunk/bin"
-    printf "VERSION=9.3.2\nBUILD=d8bb31091f42\nPRODUCT=splunk\nPLATFORM=Linux-x86_64\n" > "/tmp/splunk-pkg-build-9.3.2/splunk/etc/splunk.version"
-    [ -f /opt/splunk/bin/splunk ] && cp -f /opt/splunk/bin/splunk "/tmp/splunk-pkg-build-9.3.2/splunk/bin/splunk"
-    tar -czf "${SPLUNK_BIN_DIR}/splunk-9.3.2-d8bb31091f42-Linux-x86_64.tgz" -C "/tmp/splunk-pkg-build-9.3.2" splunk
-    rm -rf "/tmp/splunk-pkg-build-9.3.2"
+  if ! curl -fsSL --connect-timeout 10 --max-time 600 -o "${SPLUNK_BIN_DIR}/splunk-9.3.2-d8bb31091f42-Linux-x86_64.tgz" "https://download.splunk.com/products/splunk/releases/9.3.2/linux/splunk-9.3.2-d8bb31091f42-Linux-x86_64.tgz"; then
+    echo "ERROR: Failed to download official Splunk package splunk-9.3.2-d8bb31091f42-Linux-x86_64.tgz; refusing to create a placeholder." >&2
+    exit 1
   fi
+  tar -tzf "${SPLUNK_BIN_DIR}/splunk-9.3.2-d8bb31091f42-Linux-x86_64.tgz" >/dev/null
 fi
 
 echo "[4/5] Generating cryptographic SHA-256 verification manifest..."
+if ! find "${RPM_DIR}" -maxdepth 1 -type f -name '*.rpm' -print -quit | grep -q .; then
+  echo "ERROR: No real RPM packages were collected." >&2
+  exit 1
+fi
+if ! find "${SPLUNK_BIN_DIR}" -maxdepth 1 -type f -name '*.tgz' -print -quit | grep -q .; then
+  echo "ERROR: No Splunk release archives were collected." >&2
+  exit 1
+fi
 (
   cd "${BUNDLE_ROOT}"
-  find rpms splunk_bins -type f -exec sha256sum {} + > "${MANIFEST_FILE}"
+  find rpms splunk_bins -type f -print0 | sort -z | xargs -0 -r sha256sum > "${MANIFEST_FILE}"
 )
+test -s "${MANIFEST_FILE}"
 
 echo "[5/5] Building compressed Air-Gapped Deployment Archive: ${OUTPUT_ARCHIVE}..."
 tar -czf "${OUTPUT_ARCHIVE}" -C "/tmp" "man7-airgap-bundle"
