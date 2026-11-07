@@ -14,11 +14,11 @@ SPLUNK_USER="splunk"
 SPLUNK_GROUP="splunk"
 
 run_as_splunk() {
-  if su - "${SPLUNK_USER}" -c "$1" 2>/dev/null; then
-    return 0
-  else
-    eval "$1"
+  if ! id "${SPLUNK_USER}" >/dev/null 2>&1; then
+    echo "ERROR: Dedicated Splunk account '${SPLUNK_USER}' does not exist." >&2
+    return 1
   fi
+  su - "${SPLUNK_USER}" -s /bin/bash -c "$1"
 }
 
 if [ "$(id -u)" -ne 0 ]; then
@@ -27,34 +27,43 @@ if [ "$(id -u)" -ne 0 ]; then
 fi
 
 echo "[1/8] Pre-Flight Hardware & Air-Gap Integrity Verification..."
-if ! grep -qi avx /proc/cpuinfo && [ ! -f /opt/splunk/etc/splunk.version ]; then
+if ! grep -qi -w avx /proc/cpuinfo; then
   echo "CRITICAL BLOCKER: Target CPU lacks AVX instruction support required by Splunk 9.3/9.4 KV Store (MongoDB 7.0)!" >&2
   exit 1
 fi
 echo "  -> CPU AVX support verified for MongoDB 7.0 KV Store."
 
-mkdir -p "${EXTRACT_ROOT}/rpms" "${EXTRACT_ROOT}/splunk_bins"
-if [ -f "${BUNDLE_ARCHIVE}" ]; then
-  tar -xzf "${BUNDLE_ARCHIVE}" -C "${EXTRACT_ROOT}" --strip-components=1
-elif ls /var/tmp/man7-offline-kit-*.tar.gz >/dev/null 2>&1; then
-  FIRST_BUNDLE=$(ls -1 /var/tmp/man7-offline-kit-*.tar.gz | head -n 1)
-  tar -xzf "${FIRST_BUNDLE}" -C "${EXTRACT_ROOT}" --strip-components=1
+if [ ! -s "${BUNDLE_ARCHIVE}" ]; then
+  echo "ERROR: Required offline bundle is missing: ${BUNDLE_ARCHIVE}" >&2
+  exit 1
 fi
-if [ ! -f "${EXTRACT_ROOT}/SHA256SUMS.manifest" ]; then
-  (cd "${EXTRACT_ROOT}" && find rpms splunk_bins -type f -exec sha256sum {} + > SHA256SUMS.manifest)
+mkdir -p "${EXTRACT_ROOT}"
+tar -xzf "${BUNDLE_ARCHIVE}" -C "${EXTRACT_ROOT}" --strip-components=1
+if [ ! -s "${EXTRACT_ROOT}/SHA256SUMS.manifest" ]; then
+  echo "ERROR: Bundle manifest is missing or empty; refusing to reconstruct trust from unverified files." >&2
+  exit 1
 fi
 (cd "${EXTRACT_ROOT}" && sha256sum -c SHA256SUMS.manifest)
 
 echo "[2/8] Offline Installation of RHEL 9.4 RPM Prerequisites..."
-if command -v rpm >/dev/null 2>&1 && ls "${EXTRACT_ROOT}/rpms/"*.rpm >/dev/null 2>&1; then
-  rpm -Uvh --replacepkgs --oldpackage "${EXTRACT_ROOT}/rpms/"*.rpm || echo "  -> Offline RPMs verified in local package database."
-else
-  echo "  -> Verified offline package depot in ${EXTRACT_ROOT}/rpms."
+if ! command -v rpm >/dev/null 2>&1; then
+  echo "ERROR: rpm command is unavailable on the target host." >&2
+  exit 1
 fi
+shopt -s nullglob
+rpm_files=("${EXTRACT_ROOT}"/rpms/*.rpm)
+if [ "${#rpm_files[@]}" -eq 0 ]; then
+  echo "ERROR: Bundle contains no RPM packages." >&2
+  exit 1
+fi
+for rpm_file in "${rpm_files[@]}"; do
+  rpm -K "$rpm_file"
+done
+rpm -Uvh --replacepkgs --oldpackage "${rpm_files[@]}"
 
 echo "[3/8] Creating Dedicated Non-Root User (${SPLUNK_USER}:${SPLUNK_GROUP})..."
-getent group "${SPLUNK_GROUP}" >/dev/null || groupadd -r "${SPLUNK_GROUP}" || true
-getent passwd "${SPLUNK_USER}" >/dev/null || useradd -r -g "${SPLUNK_GROUP}" -m -d "${SPLUNK_HOME}" -s /bin/bash "${SPLUNK_USER}" || true
+getent group "${SPLUNK_GROUP}" >/dev/null || groupadd -r "${SPLUNK_GROUP}"
+getent passwd "${SPLUNK_USER}" >/dev/null || useradd -r -g "${SPLUNK_GROUP}" -m -d "${SPLUNK_HOME}" -s /bin/bash "${SPLUNK_USER}"
 
 echo "[4/8] Applying Splunk Best-Practice RHEL Kernel & OS Hardening..."
 # Disable Transparent Huge Pages (THP) immediately and persistently via tuned
@@ -127,13 +136,13 @@ if [ ! -f "${EXTRACT_ROOT}/splunk_bins/splunk-8.2.12-22f9d4c0a17b-Linux-x86_64.t
   rm -rf "/tmp/splunk-hop-8.2.12"
 fi
 tar -xzf "${EXTRACT_ROOT}/splunk_bins/splunk-8.2.12-22f9d4c0a17b-Linux-x86_64.tgz" -C /opt/
-chown -R "${SPLUNK_USER}:${SPLUNK_GROUP}" "${SPLUNK_HOME}" 2>/dev/null || true
+chown -R "${SPLUNK_USER}:${SPLUNK_GROUP}" "${SPLUNK_HOME}"
 run_as_splunk "${SPLUNK_HOME}/bin/splunk start --accept-license --answer-yes --no-prompt"
 echo "  => Migrating KV Store Engine to WiredTiger on 8.2.12 before 9.x transition..."
 run_as_splunk "${SPLUNK_HOME}/bin/splunk status"
 sleep 1
 run_as_splunk "${SPLUNK_HOME}/bin/splunk stop"
-run_as_splunk "${SPLUNK_HOME}/bin/splunk migrate kvstore-storage-engine --target-engine wiredTiger --answer-yes" || true
+run_as_splunk "${SPLUNK_HOME}/bin/splunk migrate kvstore-storage-engine --target-engine wiredTiger --answer-yes"
 run_as_splunk "${SPLUNK_HOME}/bin/splunk start --answer-yes --no-prompt"
 echo "  => Hop 8.2.12 migration verified. Stopping cleanly before next version hop..."
 run_as_splunk "${SPLUNK_HOME}/bin/splunk stop"
