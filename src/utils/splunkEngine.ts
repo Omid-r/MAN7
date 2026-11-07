@@ -793,7 +793,6 @@ sync_tree "\${OLD_SPLUNK_HOME}/etc/system/local/" "\${BACKUP_STAGE}/etc/system_l
 sync_tree "\${OLD_SPLUNK_HOME}/etc/apps" "\${BACKUP_STAGE}/etc/"
 sync_tree "\${OLD_SPLUNK_HOME}/etc/users" "\${BACKUP_STAGE}/etc/"
 sync_tree "\${OLD_SPLUNK_HOME}/etc/auth" "\${BACKUP_STAGE}/etc/"
-[ ! -f "\${OLD_SPLUNK_HOME}/etc/splunk.secret" ] && echo "MAN7_LEGACY_SPLUNK_SECRET_KEY" > "\${OLD_SPLUNK_HOME}/etc/splunk.secret"
 cp -p "\${OLD_SPLUNK_HOME}/etc/splunk.secret" "\${BACKUP_STAGE}/etc/splunk.secret"
 cp -p "\${OLD_SPLUNK_HOME}/etc/passwd" "\${BACKUP_STAGE}/etc/passwd" 2>/dev/null || true
 
@@ -826,11 +825,11 @@ SPLUNK_USER="${hardening.splunkUser}"
 SPLUNK_GROUP="${hardening.splunkGroup}"
 
 run_as_splunk() {
-  if su - "\${SPLUNK_USER}" -c "\$1" 2>/dev/null; then
-    return 0
-  else
-    eval "\$1"
+  if ! id "\${SPLUNK_USER}" >/dev/null 2>&1; then
+    echo "ERROR: Splunk service account is missing." >&2
+    return 1
   fi
+  su - "\${SPLUNK_USER}" -s /bin/bash -c "\$1"
 }
 
 if [ "\$(id -u)" -ne 0 ]; then
@@ -841,7 +840,7 @@ fi
 echo "[1/8] Pre-Flight Hardware & Air-Gap Integrity Verification..."
 ${
   plan.requiresAvxInstructionCheck
-    ? `if ! grep -qi avx /proc/cpuinfo && [ ! -f /opt/splunk/etc/splunk.version ]; then
+    ? `if ! grep -qi -w avx /proc/cpuinfo; then
   echo "CRITICAL BLOCKER: Target CPU lacks AVX instruction support required by Splunk 9.3/9.4 KV Store (MongoDB 7.0)!" >&2
   exit 1
 fi
@@ -856,8 +855,9 @@ elif ls /var/tmp/man7-offline-kit-*.tar.gz >/dev/null 2>&1; then
   FIRST_BUNDLE=\$(ls -1 /var/tmp/man7-offline-kit-*.tar.gz | head -n 1)
   tar -xzf "\${FIRST_BUNDLE}" -C "\${EXTRACT_ROOT}" --strip-components=1
 fi
-if [ ! -f "\${EXTRACT_ROOT}/SHA256SUMS.manifest" ]; then
-  (cd "\${EXTRACT_ROOT}" && find rpms splunk_bins -type f -exec sha256sum {} + > SHA256SUMS.manifest)
+if [ ! -s "\${EXTRACT_ROOT}/SHA256SUMS.manifest" ]; then
+  echo "ERROR: Missing trusted bundle manifest; refusing to reconstruct it." >&2
+  exit 1
 fi
 (cd "\${EXTRACT_ROOT}" && sha256sum -c SHA256SUMS.manifest)
 
@@ -962,7 +962,7 @@ ${
 run_as_splunk "\${SPLUNK_HOME}/bin/splunk status"
 sleep 1
 run_as_splunk "\${SPLUNK_HOME}/bin/splunk stop"
-run_as_splunk "\${SPLUNK_HOME}/bin/splunk migrate kvstore-storage-engine --target-engine wiredTiger --answer-yes" || true
+run_as_splunk "\${SPLUNK_HOME}/bin/splunk migrate kvstore-storage-engine --target-engine wiredTiger --answer-yes"
 run_as_splunk "\${SPLUNK_HOME}/bin/splunk start --answer-yes --no-prompt"`
     : ''
 }
