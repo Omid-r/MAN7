@@ -50,7 +50,10 @@ function isSameOriginRequest(req: express.Request): boolean {
   if (!origin || !host) return false;
   try {
     const parsed = new URL(origin);
-    return parsed.host === host && parsed.protocol === `${req.protocol}:`;
+    const configuredAppUrl = process.env.APP_URL ? new URL(process.env.APP_URL) : null;
+    const expectedProtocol = configuredAppUrl?.protocol || `${req.protocol}:`;
+    return parsed.host === host && parsed.protocol === expectedProtocol &&
+      (!configuredAppUrl || parsed.host === configuredAppUrl.host);
   } catch {
     return false;
   }
@@ -2510,7 +2513,7 @@ with zipfile.ZipFile(sys.stdout.buffer, 'w', zipfile.ZIP_DEFLATED) as zf:
     });
   }
 
-  const bindHost = process.env.MAN7_BIND_HOST || '127.0.0.1';
+  const bindHost = process.env.MAN7_BIND_HOST || (process.env.K_SERVICE ? '0.0.0.0' : '127.0.0.1');
   app.listen(PORT, bindHost, () => {
     console.log(`[MAN7] Full-Stack Server listening on http://${bindHost}:${PORT}`);
   });
