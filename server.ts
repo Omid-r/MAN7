@@ -33,7 +33,11 @@ function readCookie(req: express.Request, name: string): string {
     const separator = part.indexOf('=');
     if (separator < 0) continue;
     if (part.slice(0, separator).trim() === name) {
-      return decodeURIComponent(part.slice(separator + 1).trim());
+      try {
+        return decodeURIComponent(part.slice(separator + 1).trim());
+      } catch {
+        return '';
+      }
     }
   }
   return '';
@@ -957,6 +961,10 @@ function resolveTargetInstallPath(category: DepotCategory, safeName: string, cus
 
 async function startServer() {
   const app = express();
+  if (process.env.MAN7_TRUST_PROXY === 'true') {
+    // Only enable behind exactly one trusted local reverse proxy; never expose the app directly.
+    app.set('trust proxy', 1);
+  }
 
   app.get('/login', (_req, res) => {
     res.type('html').send(`<!doctype html><html lang="fa" dir="rtl"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>ورود مدیر MAN7</title><body style="font-family:system-ui;max-width:420px;margin:12vh auto;padding:24px;background:#0b1220;color:#e5e7eb"><h2>ورود مدیر MAN7</h2><p>رمز مدیریتی تعریف‌شده در محیط سرور را وارد کنید.</p><form id="login"><input id="password" type="password" autocomplete="current-password" required style="box-sizing:border-box;width:100%;padding:12px;margin:12px 0"><button style="padding:10px 18px">ورود امن</button></form><p id="message" role="status"></p><script>document.getElementById('login').addEventListener('submit',async e=>{e.preventDefault();const message=document.getElementById('message');message.textContent='در حال بررسی...';try{const response=await fetch('/api/auth/login',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'same-origin',body:JSON.stringify({password:document.getElementById('password').value})});const data=await response.json();if(!response.ok)throw new Error(data.error||'ورود ناموفق بود');location.replace('/')}catch(error){message.textContent=error.message}})</script></body></html>`);
