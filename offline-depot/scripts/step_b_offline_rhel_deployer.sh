@@ -110,7 +110,13 @@ fi
 
 echo "[6/8] Restoring Baseline Configuration & splunk.secret from Legacy Host..."
 mkdir -p "${SPLUNK_HOME}/etc/system/local" "${SPLUNK_HOME}/etc/apps" "${SPLUNK_HOME}/etc/users"
-if [ -f "${LEGACY_CONFIG_ARCHIVE}" ]; then
+if [ ! -s "${LEGACY_CONFIG_ARCHIVE}" ] || [ ! -s "${LEGACY_CONFIG_ARCHIVE}.sha256" ]; then
+  echo "ERROR: Legacy archive or its checksum sidecar is missing." >&2
+  exit 1
+fi
+(cd /var/tmp && sha256sum -c "${LEGACY_CONFIG_ARCHIVE}.sha256")
+tar -tzf "${LEGACY_CONFIG_ARCHIVE}" >/dev/null
+if [ -s "${LEGACY_CONFIG_ARCHIVE}" ]; then
   tar -xzf "${LEGACY_CONFIG_ARCHIVE}" -C /var/tmp
   if command -v rsync >/dev/null 2>&1; then
     rsync -aHAX /var/tmp/splunk-migration-export/etc/system_local/ "${SPLUNK_HOME}/etc/system/local/"
