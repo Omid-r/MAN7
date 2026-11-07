@@ -83,11 +83,11 @@ function assertProtectedFile(filePath: string, label: string, privateKey: boolea
 
 function assertExactHostPin(target: RemoteTarget): void {
   const expected = target.port === 22 ? target.host : `[${target.host}]:${target.port}`;
-  const lines = fs.readFileSync(target.knownHostsFile, 'utf8').split(/\\r?\\n/);
+  const lines = fs.readFileSync(target.knownHostsFile, 'utf8').split(/\r?\n/);
   const exactMatch = lines.some((line) => {
     const trimmed = line.trim();
     if (!trimmed || trimmed.startsWith('#')) return false;
-    const fields = trimmed.split(/\\s+/);
+    const fields = trimmed.split(/\s+/);
     if (fields.length < 3 || fields[0].startsWith('@')) return false;
     const names = fields[0].split(',');
     if (names.some((name) => name.includes('*') || name.includes('?') || name.startsWith('|'))) {
