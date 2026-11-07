@@ -51,14 +51,15 @@ function parseTargets(): RemoteTarget[] {
         !/^(?=.{1,253}$)(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)(?:\.(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?))*$/.test(host)) {
       throw new Error(`SSH target ${id} has an invalid DNS hostname.`);
     }
-    if (typeof user !== 'string' || !/^[a-z_][a-z0-9_-]{0,31}$/.test(user)) {
-      throw new Error(`SSH target ${id} has an invalid service username.`);
+    if (user !== 'man7-remote') {
+      throw new Error(`SSH target ${id} must use the dedicated man7-remote account.`);
     }
     if (!Number.isInteger(port) || port < 1 || port > 65535) {
       throw new Error(`SSH target ${id} has an invalid port.`);
     }
     for (const [label, file] of [['identityFile', identityFile], ['knownHostsFile', knownHostsFile]] as const) {
-      if (typeof file !== 'string' || !path.isAbsolute(file) || file.includes('\0')) {
+      if (typeof file !== 'string' || !path.isAbsolute(file) || /[\\0\\r\\n]/.test(file) ||
+          (label === 'knownHostsFile' && file.includes(','))) {
         throw new Error(`SSH target ${id} requires an absolute ${label} path.`);
       }
     }
@@ -139,6 +140,15 @@ function runPreflight(target: RemoteTarget): Promise<{ report: Record<string, un
       '-o', 'ClearAllForwardings=yes',
       '-o', 'ForwardAgent=no',
       '-o', 'PermitLocalCommand=no',
+      '-o', 'ProxyCommand=none',
+      '-o', 'ProxyJump=none',
+      '-o', 'ControlMaster=no',
+      '-o', 'ControlPath=none',
+      '-o', 'ControlPersist=no',
+      '-o', 'HostbasedAuthentication=no',
+      '-o', 'GSSAPIAuthentication=no',
+      '-o', 'UpdateHostKeys=no',
+      '-o', 'VerifyHostKeyDNS=no',
       '-o', 'ConnectTimeout=8',
       '-o', 'ConnectionAttempts=1',
       '-p', String(target.port),
@@ -146,7 +156,7 @@ function runPreflight(target: RemoteTarget): Promise<{ report: Record<string, un
       `${target.user}@${target.host}`,
       REMOTE_PREFLIGHT_COMMAND,
     ];
-    const child = spawn('ssh', args, { shell: false, stdio: ['ignore', 'pipe', 'pipe'], env: { PATH: '/usr/bin:/bin' } });
+    const child = spawn('/usr/bin/ssh', args, { shell: false, stdio: ['ignore', 'pipe', 'pipe'], env: { PATH: '/usr/bin:/bin' } });
     let stdout = '';
     let stderr = '';
     let outputBytes = 0;
