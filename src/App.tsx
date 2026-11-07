@@ -23,7 +23,7 @@ import { VisualGuideView } from './components/VisualGuideView';
 import { GitHubSyncModal } from './components/GitHubSyncModal';
 import { StepByStepWizardView } from './components/StepByStepWizardView';
 import { CodespaceLiveTerminalDock } from './components/CodespaceLiveTerminalDock';
-import { PlugZap, BookOpen, ArrowLeft, Github, Download, Sparkles, CheckCircle2 } from 'lucide-react';
+import { PlugZap, BookOpen, ArrowLeft, GitBranch, Download, Sparkles, CheckCircle2 } from 'lucide-react';
 
 export type ActiveModule =
   | 'step_wizard'
@@ -227,7 +227,7 @@ echo "MAN7 Offline Suite extracted to ./man7-offline-suite/"
             onClick={() => setIsGithubModalOpen(true)}
             className="px-3 py-1.5 text-xs font-semibold rounded-lg border bg-slate-900 text-emerald-300 border-emerald-500/40 hover:border-emerald-400 hover:bg-emerald-500/10 transition-colors flex items-center gap-1.5 whitespace-nowrap shrink-0"
           >
-            <Github className="w-3.5 h-3.5 text-emerald-400" />
+            <GitBranch className="w-3.5 h-3.5 text-emerald-400" />
             <span>اتصال GitHub و دانلود ویندوز</span>
           </button>
 
@@ -601,7 +601,7 @@ echo "MAN7 Offline Suite extracted to ./man7-offline-suite/"
               onClick={() => setIsGithubModalOpen(true)}
               className="text-sky-400 hover:text-sky-300 transition-colors font-medium inline-flex items-center gap-1"
             >
-              <Github className="w-3.5 h-3.5" />
+              <GitBranch className="w-3.5 h-3.5" />
               <span>اتصال به GitHub</span>
             </button>
             <span aria-hidden="true">·</span>
