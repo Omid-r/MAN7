@@ -197,8 +197,7 @@ function startSplunkLabPortListeners() {
   if (splunkMockServers.length > 0) return;
 
   // Port 8000: Splunk Web HTTP endpoint
-  const web8000 = net.createServer((socket) => {    socket.on('data', () => {      const body = JSON.stringify({
-        product: 'Splunk Enterprise',
+  const web8000 = net.createServer((socket) => {    socket.on('data', () => {      const body = JSON.stringify({        product: 'Splunk Enterprise',
         version: splunkLabVersion,
         build: splunkLabBuild,
         os: 'Ubuntu 20.04.6 LTS (Focal Fossa)',
@@ -397,8 +396,7 @@ for arg in "$@"; do
       PKGS+=("$arg")
       ;;  esac
 donemkdir -p "$DESTDIR"
-if [ "\${#PKGS[@]}" -eq 0 ]; then
-  PKGS=(glibc glibc-common libxcrypt-compat policycoreutils policycoreutils-python-utils selinux-policy-targeted tuned numactl chrony firewalld rsync tar openssl lsof)
+if [ "\${#PKGS[@]}" -eq 0 ]; then  PKGS=(glibc glibc-common libxcrypt-compat policycoreutils policycoreutils-python-utils selinux-policy-targeted tuned numactl chrony firewalld rsync tar openssl lsof)
 fi
 for pkg in "\${PKGS[@]}"; do
   RPM_FILE="\${DESTDIR}/\${pkg}-2.34-100.el9.x86_64.rpm"
@@ -597,8 +595,7 @@ function provisionUbuntu20Splunk9Lab(cleanPrevious = true) {
       );
     } catch {      // ignore if read-only in restricted environments    }
 
-    // 2. Create /opt/splunk directory hierarchy for Splunk Enterprise 9.2.1
-    const splunkDirs = [
+    // 2. Create /opt/splunk directory hierarchy for Splunk Enterprise 9.2.1    const splunkDirs = [
       '/opt/splunk/bin',
       '/opt/splunk/etc/system/local',
       '/opt/splunk/etc/apps',
@@ -797,8 +794,7 @@ case "\${CMD}" in
   backup)    mkdir -p /opt/splunk/var/lib/splunk/kvstoreBackup    tar -czf /opt/splunk/var/lib/splunk/kvstoreBackup/kvstore_migration_backup.tar.gz -C /opt/splunk/etc/system local
     echo "KV Store point-in-time backup archive created: /opt/splunk/var/lib/splunk/kvstoreBackup/kvstore_migration_backup.tar.gz"
     ;;
-  migrate)
-    echo "Migrating KV store storage engine to wiredTiger..."
+  migrate)    echo "Migrating KV store storage engine to wiredTiger..."
     echo "Storage engine migration to wiredTiger completed successfully."
     ;;
   enable)
@@ -998,7 +994,6 @@ function executeCommandOverTcpRootPort(
     });
   });
 }
-
 function sanitizeFileName(name: string): string {
   return path.basename(name).replace(/[^a-zA-Z0-9._+-]/g, '_');
 }
@@ -1197,8 +1192,7 @@ async function startServer() {
       stepContextFA?: string;
     };
     if (!command || typeof command !== 'string' || !command.trim()) {
-      res.status(400).json({ error: 'دستور شل معتبر وارد نشده است.' });
-      return;
+      res.status(400).json({ error: 'دستور شل معتبر وارد نشده است.' });      return;
     }
 
     const resolvedCwd =
@@ -1397,7 +1391,6 @@ async function startServer() {
     const hash = crypto.createHash('sha256');
     const writeStream = fs.createWriteStream(depotPath);
     let bytesWritten = 0;
-
     req.on('data', (chunk: Buffer) => {
       bytesWritten += chunk.length;
       hash.update(chunk);
@@ -1598,7 +1591,6 @@ import os, sys, zipfile
 
 root_dir = sys.argv[1]
 exclude_dirs = {'node_modules', '.git', '.playwright-cli', 'dist'}
-
 with zipfile.ZipFile(sys.stdout.buffer, 'w', zipfile.ZIP_DEFLATED) as zf:
     for base, dirs, files in os.walk(root_dir):
         dirs[:] = [d for d in dirs if d not in exclude_dirs]
@@ -1797,8 +1789,7 @@ with zipfile.ZipFile(sys.stdout.buffer, 'w', zipfile.ZIP_DEFLATED) as zf:
       latestCommitSha = refData.object?.sha || null;
     }
 
-    // 3. Collect all workspace files (including MAN7-Standalone.html & windows-portable/*)
-    const files = collectWorkspaceFilesForGithub(ROOT_DIR);
+    // 3. Collect all workspace files (including MAN7-Standalone.html & windows-portable/*)    const files = collectWorkspaceFilesForGithub(ROOT_DIR);
     const treeItems: Array<{
       path: string;
       mode: '100644' | '100755';
@@ -1997,8 +1988,7 @@ with zipfile.ZipFile(sys.stdout.buffer, 'w', zipfile.ZIP_DEFLATED) as zf:
         login: string;
         name?: string;
         avatar_url?: string;
-        html_url?: string;
-      };
+        html_url?: string;      };
 
       saveGithubSession({
         accessToken: tokenData.access_token,
@@ -2197,8 +2187,7 @@ with zipfile.ZipFile(sys.stdout.buffer, 'w', zipfile.ZIP_DEFLATED) as zf:
             `https://api.github.com/repos/${githubSession.login}/${repoName}/actions/workflows/ubuntu20-splunk9-lab.yml/dispatches`,
             {
               method: 'POST',
-              headers: {
-                Authorization: `Bearer ${githubSession.accessToken}`,
+              headers: {                Authorization: `Bearer ${githubSession.accessToken}`,
                 Accept: 'application/vnd.github+json',
                 'Content-Type': 'application/json',
                 'User-Agent': 'MAN7-AirGap-Suite',
@@ -2397,8 +2386,7 @@ with zipfile.ZipFile(sys.stdout.buffer, 'w', zipfile.ZIP_DEFLATED) as zf:
     for (const item of commandsToTest) {
       const t0 = Date.now();
       const result = await executeCommandOverTcpRootPort(
-        rootPortState.host || DEFAULT_CODESPACE_HOST,
-        rootPortState.port || 9099,
+        rootPortState.host || DEFAULT_CODESPACE_HOST,        rootPortState.port || 9099,
         item.command,
         '/opt/splunk-airgap',
         45000
@@ -2478,8 +2466,9 @@ with zipfile.ZipFile(sys.stdout.buffer, 'w', zipfile.ZIP_DEFLATED) as zf:
     });
   }
 
-  app.listen(PORT, '0.0.0.0', () => {
-    console.log(`[MAN7] Full-Stack Server listening on http://0.0.0.0:${PORT}`);
+  const bindHost = process.env.MAN7_BIND_HOST || '127.0.0.1';
+  app.listen(PORT, bindHost, () => {
+    console.log(`[MAN7] Full-Stack Server listening on http://${bindHost}:${PORT}`);
   });
 }
 
