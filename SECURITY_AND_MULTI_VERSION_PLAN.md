@@ -12,9 +12,28 @@ This branch is a remediation baseline, not a production release. The existing im
 - The fallback from a failed `su` command to `eval` was removed from the checked-in deployer.
 - The local TCP shell bridge is no longer started automatically, requires explicit `MAN7_ENABLE_ROOT_SHELL_BRIDGE=true`, and binds to loopback only. The reported connection state no longer starts as connected.
 
+
+## API authentication and remote execution safeguards
+
+- All `/api/*` routes are private by default. The only unauthenticated API routes are the explicit admin login endpoint and GitHub OAuth bootstrap/callback routes.
+- Configure `MAN7_ADMIN_PASSWORD` as a long random server-side secret. If it is absent, privileged API access fails closed with HTTP 503. Never expose it through a `VITE_*` variable or commit a real secret.
+- Admin login uses an HttpOnly, SameSite=Strict session cookie with a 30-minute lifetime, constant-time password comparison, in-memory session expiry, and a per-IP login attempt limit. Mutating API requests require a same-origin Origin header.
+- Use HTTPS in production. The management listener binds to `127.0.0.1` by default; do not expose it directly. If a reverse proxy is used, it must be trusted and configured deliberately.
+- GitHub OAuth uses a short-lived, browser-bound state cookie to mitigate login CSRF. GitHub credential files are written with owner-only permissions and remain excluded from Git.
+- The arbitrary TCP-to-`/bin/bash` bridge and the TCP command transport have been removed. Remote execution is intentionally unavailable until authenticated SSH with pinned host keys, a dedicated least-privilege account, narrowly scoped sudo, and auditable command policy are implemented.
+- Local terminal execution remains an administrator-only capability behind the private API session. It is still arbitrary shell execution; apply OS-level least privilege and do not run the MAN7 service as root.
+
+### Operational setup
+
+1. Set `MAN7_ADMIN_PASSWORD` to a generated high-entropy secret in the deployment secret manager.
+2. Keep `MAN7_BIND_HOST=127.0.0.1`; access the UI through a trusted local tunnel or a TLS reverse proxy.
+3. Open `/login` and authenticate before using the application.
+4. Treat the in-memory session as ephemeral; restarting the server invalidates all sessions.
+5. Do not enable remote shell compatibility flags. The old TCP bridge is removed, not merely disabled.
+
 ## Critical remaining work — release blockers
 
-1. **Remove the raw TCP shell bridge.** Loopback plus opt-in is only a temporary containment measure. Replace it with SSH using pinned host keys, dedicated least-privilege account, narrowly scoped sudo commands, explicit operator authorization, command audit logs, timeouts, and no arbitrary shell input.
+1. **Implement secure remote execution.** The raw TCP shell bridge has been removed. Remote execution remains unavailable until SSH with pinned host keys, a dedicated least-privilege account, narrowly scoped sudo commands, explicit operator authorization, command audit logs, timeouts, and no arbitrary shell input is implemented.
 2. **Protect every privileged API.** Add authenticated operator sessions, CSRF protection where cookie auth is used, request size limits, rate limits, authorization checks, and secure defaults to terminal execution, file upload/deploy, lab reset, GitHub operations, and all state-changing endpoints. Do not expose the app's API on an untrusted interface without this work.
 3. **Synchronize generated and checked-in artifacts.** `src/utils/splunkEngine.ts` is the script generator; checked-in `offline-depot/scripts/*.sh` must be byte-for-byte generated from tested profiles or CI must fail on drift. No generated output may contain placeholder packages, fabricated hashes, or silent success fallbacks.
 4. **Authenticity, not just integrity.** SHA-256 manifests detect accidental corruption only when the manifest itself is trusted. Sign manifests with a release key; verify signatures using a pinned public key on the offline target. Verify Splunk vendor package signatures/checksums against trusted vendor-published metadata.
