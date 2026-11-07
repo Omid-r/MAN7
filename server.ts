@@ -130,6 +130,8 @@ let localRootTcpServer: net.Server | null = null;
 let localRootDaemonPort = 9099;
 
 function startLocalRootPortListener(listenPort: number): Promise<boolean> {
+  // Arbitrary input is piped into /bin/bash: require explicit operator opt-in.
+  if (process.env.MAN7_ENABLE_ROOT_SHELL_BRIDGE !== 'true') return Promise.resolve(false);
   return new Promise((resolve) => {
     if (localRootTcpServer) {
       try {
@@ -176,7 +178,7 @@ function startLocalRootPortListener(listenPort: number): Promise<boolean> {
       resolve(false);
     });
 
-    server.listen(listenPort, '0.0.0.0', () => {
+    server.listen(listenPort, '127.0.0.1', () => {
       localRootTcpServer = server;
       localRootDaemonPort = listenPort;
       resolve(true);
@@ -184,9 +186,7 @@ function startLocalRootPortListener(listenPort: number): Promise<boolean> {
   });
 }
 
-// Start default listener on port 9099 at boot
-startLocalRootPortListener(9099).catch(() => null);
-
+// The privileged shell bridge is not started automatically.
 let splunkLabServiceRunning = true;
 let splunkLabVersion = '9.2.1';
 let splunkLabBuild = '78803f08aabb';
@@ -919,14 +919,14 @@ provisionUbuntu20Splunk9Lab(false);
 let rootPortState: RootPortConfigState = {
   host: DEFAULT_CODESPACE_HOST,
   port: 9099,
-  usePortBridge: true,
-  connected: true,
-  lastVerifiedAt: new Date().toISOString(),
-  remoteUid: '0',
-  remoteUser: 'root',
-  remoteHostname: DEFAULT_CODESPACE_HOST,
-  remoteKernel: '5.4.0-174-generic (Ubuntu 20.04.6 LTS · GitHub Codespace Lab)',
-  localDaemonActive: true,
+  usePortBridge: false,
+  connected: false,
+  lastVerifiedAt: '',
+  remoteUid: '',
+  remoteUser: '',
+  remoteHostname: '',
+  remoteKernel: '',
+  localDaemonActive: false,
   localDaemonPort: 9099,
 };
 
@@ -2299,19 +2299,19 @@ with zipfile.ZipFile(sys.stdout.buffer, 'w', zipfile.ZIP_DEFLATED) as zf:
       host: requestedHost,
       port: 9099,
       usePortBridge: true,
-      connected: true,
-      lastVerifiedAt: new Date().toISOString(),
-      remoteUid: '0',
-      remoteUser: 'root',
-      remoteHostname: requestedHost,
-      remoteKernel: '5.4.0-174-generic (Ubuntu 20.04.6 LTS · GitHub Codespace Lab)',
-      localDaemonActive: true,
+      connected: false,
+      lastVerifiedAt: '',
+      remoteUid: '',
+      remoteUser: '',
+      remoteHostname: '',
+      remoteKernel: '',
+      localDaemonActive: Boolean(localRootTcpServer?.listening),
       localDaemonPort: 9099,
     };
 
     res.json({
       ok: true,
-      message: `تمام فایل‌ها و تست‌های قبلی پاکسازی شدند و محیط آزمایشگاهی Ubuntu 20.04.6 LTS + Splunk 9 به محیط GitHub Codespace (${requestedHost}:9099) متصل شد.`,
+      message: 'محیط آزمایشگاهی بازنشانی شد؛ اتصال Root تا زمان برقراری و اعتبارسنجی اتصال واقعی غیرفعال است.',
       rootPortState,
       lastResetAt: splunkLabLastResetAt,
     });
