@@ -197,8 +197,7 @@ function startSplunkLabPortListeners() {
   if (splunkMockServers.length > 0) return;
 
   // Port 8000: Splunk Web HTTP endpoint
-  const web8000 = net.createServer((socket) => {
-    socket.on('data', () => {
+  const web8000 = net.createServer((socket) => {    socket.on('data', () => {
       const body = JSON.stringify({
         product: 'Splunk Enterprise',
         version: splunkLabVersion,
@@ -215,7 +214,7 @@ function startSplunkLabPortListeners() {
     });
   });
   web8000.on('error', () => null);
-  web8000.listen(8000, '0.0.0.0');
+  web8000.listen(8000, '127.0.0.1');
   splunkMockServers.push(web8000);
 
   // Port 8089: splunkd Management REST API
@@ -247,7 +246,7 @@ function startSplunkLabPortListeners() {
     });
   });
   mgmt8089.on('error', () => null);
-  mgmt8089.listen(8089, '0.0.0.0');
+  mgmt8089.listen(8089, '127.0.0.1');
   splunkMockServers.push(mgmt8089);
 
   // Port 9997: Splunk-to-Splunk (S2S) Indexer Receiver
@@ -256,7 +255,7 @@ function startSplunkLabPortListeners() {
     socket.end();
   });
   s2s9997.on('error', () => null);
-  s2s9997.listen(9997, '0.0.0.0');
+  s2s9997.listen(9997, '127.0.0.1');
   splunkMockServers.push(s2s9997);
 }
 
@@ -397,8 +396,7 @@ for arg in "$@"; do
       ;;
     *)
       PKGS+=("$arg")
-      ;;
-  esac
+      ;;  esac
 done
 mkdir -p "$DESTDIR"
 if [ "\${#PKGS[@]}" -eq 0 ]; then
@@ -543,6 +541,9 @@ function buildValidSplunkTarball(targetFilePath: string, version: string, buildH
 }
 
 function provisionUbuntu20Splunk9Lab(cleanPrevious = true) {
+  if (process.env.MAN7_ENABLE_DESTRUCTIVE_LAB_PROVISIONING !== 'true') {
+    throw new Error('Destructive mock-lab provisioning is disabled. Use an isolated disposable VM and explicit opt-in only.');
+  }
   try {
     installLabSystemCliShims();
 
@@ -597,8 +598,7 @@ function provisionUbuntu20Splunk9Lab(cleanPrevious = true) {
         'utf-8'
       );
     } catch {
-      // ignore if read-only in restricted environments
-    }
+      // ignore if read-only in restricted environments    }
 
     // 2. Create /opt/splunk directory hierarchy for Splunk Enterprise 9.2.1
     const splunkDirs = [
@@ -797,8 +797,7 @@ case "\${CMD}" in
     echo "Checking: /opt/splunk/etc/system/local/server.conf ... OK"
     echo "No spec file errors found."
     ;;
-  backup)
-    mkdir -p /opt/splunk/var/lib/splunk/kvstoreBackup
+  backup)    mkdir -p /opt/splunk/var/lib/splunk/kvstoreBackup
     tar -czf /opt/splunk/var/lib/splunk/kvstoreBackup/kvstore_migration_backup.tar.gz -C /opt/splunk/etc/system local
     echo "KV Store point-in-time backup archive created: /opt/splunk/var/lib/splunk/kvstoreBackup/kvstore_migration_backup.tar.gz"
     ;;
@@ -913,8 +912,8 @@ esac
   }
 }
 
-// Initialize Ubuntu 20.04.6 LTS + Splunk 9.2.1 Lab on startup
-provisionUbuntu20Splunk9Lab(false);
+// Never provision or overwrite the host OS/Splunk paths automatically at server startup.
+// Lab provisioning is destructive and must only be run on a disposable isolated VM.
 
 let rootPortState: RootPortConfigState = {
   host: DEFAULT_CODESPACE_HOST,
@@ -998,7 +997,6 @@ function executeCommandOverTcpRootPort(
       const cleaned = rawOutput.replace(/__MAN7_EXIT_CODE:\d+__\s*$/, '').trimEnd();
       finish(cleaned, '', exitCode);
     });
-
     socket.on('error', (err) => {
       clearTimeout(timer);
       finish('', `خطا در اتصال به پورت Root سرور (${host}:${port}): ${err.message}`, 1);
@@ -1197,7 +1195,6 @@ async function startServer() {
 
     res.json({ ok: true, state: rootPortState });
   });
-
   // 2. Live Linux Shell Command Execution Engine (Executes via configured Root Port or direct local /bin/bash)
   app.post('/api/terminal/exec', async (req, res) => {
     const { command, workingDir, stepContextFA } = req.body as {
@@ -1398,7 +1395,6 @@ async function startServer() {
     const safeName = sanitizeFileName(decodeURIComponent(rawName));
     const depotPath = path.join(DEPOT_ROOT, category, safeName);
     const targetInstallPath = resolveTargetInstallPath(category, safeName, customTargetDir);
-
     try {
       fs.mkdirSync(path.dirname(targetInstallPath), { recursive: true });
     } catch {
@@ -1597,8 +1593,7 @@ async function startServer() {
     tarProc.stdout.pipe(res);
     tarProc.on('error', () => {
       if (!res.headersSent) {
-        res.status(500).end('Failed to generate release archive');
-      }
+        res.status(500).end('Failed to generate release archive');      }
     });
   });
 
@@ -1797,8 +1792,7 @@ with zipfile.ZipFile(sys.stdout.buffer, 'w', zipfile.ZIP_DEFLATED) as zf:
       });
       if (!createResp.ok) {
         const errJson = await createResp.json().catch(() => ({}));
-        throw new Error((errJson as { message?: string }).message || 'خطا در ساخت مخزن MAN7 روی GitHub');
-      }
+        throw new Error((errJson as { message?: string }).message || 'خطا در ساخت مخزن MAN7 روی GitHub');      }
       await new Promise((r) => setTimeout(r, 1500));
     }
 
@@ -1997,8 +1991,7 @@ with zipfile.ZipFile(sys.stdout.buffer, 'w', zipfile.ZIP_DEFLATED) as zf:
       });
       const tokenData = (await tokenResp.json()) as { access_token?: string; error_description?: string };
       if (!tokenData.access_token) {
-        throw new Error(tokenData.error_description || 'عدم دریافت توکن دسترسی از GitHub');
-      }
+        throw new Error(tokenData.error_description || 'عدم دریافت توکن دسترسی از GitHub');      }
 
       const userResp = await fetch('https://api.github.com/user', {
         headers: {
@@ -2197,8 +2190,7 @@ with zipfile.ZipFile(sys.stdout.buffer, 'w', zipfile.ZIP_DEFLATED) as zf:
       // Also reset the local Ubuntu 20.04 + Splunk 9.2.1 lab cleanly
       provisionUbuntu20Splunk9Lab(true);
 
-      const repoName = String(req.body?.repoName || githubSession?.repoName || 'MAN7').trim() || 'MAN7';
-      const branch = String(req.body?.branch || githubSession?.branch || 'main').trim() || 'main';
+      const repoName = String(req.body?.repoName || githubSession?.repoName || 'MAN7').trim() || 'MAN7';      const branch = String(req.body?.branch || githubSession?.branch || 'main').trim() || 'main';
       const privateRepo =
         req.body?.privateRepo !== undefined ? Boolean(req.body.privateRepo) : Boolean(githubSession?.privateRepo);
 
@@ -2397,8 +2389,7 @@ with zipfile.ZipFile(sys.stdout.buffer, 'w', zipfile.ZIP_DEFLATED) as zf:
         titleFA: 'گام ۳: اجرای واقعی اسکریپت گام A (step_a_online_collector.sh) و ساخت باندل آفلاین .tar.gz با مانیفست SHA-256',
         command:
           'bash /opt/splunk-airgap/scripts/step_a_online_collector.sh && ls -lh /var/tmp/man7-offline-kit-ubuntu-20.04-lts.tar.gz && cat /var/tmp/man7-offline-kit-ubuntu-20.04-lts.tar.gz.sha256',
-      },
-      {
+      },      {
         stageNumber: 4,
         titleFA: 'گام ۴: پالایش کانفیگ‌های قدیمی (.conf Sanitizer)، استقرار در /opt/splunk/etc/system/local و تایید با btool check',
         command:
@@ -2507,4 +2498,3 @@ with zipfile.ZipFile(sys.stdout.buffer, 'w', zipfile.ZIP_DEFLATED) as zf:
 }
 
 startServer();
-
