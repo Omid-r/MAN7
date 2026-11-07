@@ -1917,6 +1917,13 @@ with zipfile.ZipFile(sys.stdout.buffer, 'w', zipfile.ZIP_DEFLATED) as zf:
 
     const state = crypto.randomBytes(32).toString('hex');
     githubOAuthStates.set(state, Date.now() + 10 * 60 * 1000);
+    res.cookie('man7_github_oauth_state', state, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      path: '/auth/callback',
+      maxAge: 10 * 60 * 1000,
+    });
     const params = new URLSearchParams({
       client_id: clientId,
       redirect_uri: redirectUri,
@@ -1936,7 +1943,14 @@ with zipfile.ZipFile(sys.stdout.buffer, 'w', zipfile.ZIP_DEFLATED) as zf:
     const code = String(req.query.code || '');
     const state = String(req.query.state || '');
     const stateExpiry = state ? githubOAuthStates.get(state) : undefined;
-    if (!state || !stateExpiry || stateExpiry <= Date.now()) {
+    const browserState = readCookie(req, 'man7_github_oauth_state');
+    res.clearCookie('man7_github_oauth_state', {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      path: '/auth/callback',
+    });
+    if (!state || !browserState || state !== browserState || !stateExpiry || stateExpiry <= Date.now()) {
       if (state) githubOAuthStates.delete(state);
       res.status(400).send('درخواست OAuth نامعتبر یا منقضی شده است. ورود را دوباره آغاز کنید.');
       return;
